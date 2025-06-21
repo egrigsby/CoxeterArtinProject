@@ -1,0 +1,551 @@
+#Run this preamble to import some libraries that are available in google colab that are often useful.
+#Numpy is good for efficiently working with array/vector/matrix data.
+#Random is good for generating random numbers according to some (discrete or continuous) distribution
+#Matplotlib is good for plotting
+#Torch is PyTorch, which is the standard python library for creating and training ML models
+#You may need to call other libraries for your code
+
+import numpy as np
+import random
+import matplotlib.pyplot as plt
+#import torch
+
+from operator import neg  #for negating integers
+
+
+
+########################################################
+## Base functions for getting generators and relators ##
+########################################################
+
+def cox_gen(matrix):
+  n = np.sum(matrix == 1)            #masks for 1s and sums all true values
+  generators = list(range(1,n+1))    #generates integers from 1 through n
+  return generators 
+
+def cox_rel(matrix):
+  #generate pairs to check cases where s != s'
+  generators = cox_gen(matrix)
+  pairs = [(generators[i], generators[j]) for i in range(len(generators)) for j in range(i + 1, len(generators))]
+  relators = []
+
+  #getting relators of form s^2
+  for g in generators:
+    relators.append([g,g])
+
+  #getting braid relators
+  for p in pairs:
+    m = matrix[p[0]-1,p[1]-1]       #subtracting 1 retrieves the correct row and column, eg what we call row 1 is actually indexed as row 0
+    if np.any(np.isinf(m)):         #skipping to the next pair if m(s,s') = infinity
+      continue
+    relators.append(p*(int(m)))     #otherwise, appends the pair p m times, representing the relation (ss')^m(s,s') = e
+  return relators
+
+def artin_gen(matrix):
+  n = np.sum(matrix == 1)            #masks for 1s and sums all true values
+  generators = list(range(-n,n+1))   #generates integers from -n through n
+  generators.remove(0)
+  return generators
+
+def artin_rel(matrix):
+  #generate pairs to check cases where s != s'
+  generators = cox_gen(matrix)
+  pairs = [(generators[i], generators[j]) for i in range(len(generators)) for j in range(i + 1, len(generators))]
+
+  relators = []
+
+  #retrieving length m from m(s,s')
+  for p in pairs:
+    m = matrix[p[0]-1,p[1]-1]
+    if np.any(np.isinf(m)):         #skipping to the next pair if m(s,s') = infinity
+      continue
+
+    #building pi(s,s',m)
+    pi = []
+
+    #alternating between s and s' for an m-length list
+    for i in range(int(m)):
+      if i % 2 == 0:
+        pi.append(p[0])     #even indices give s
+      else:
+        pi.append(p[1])     #odd indices give s'
+
+    #building pi(s',s, m) inverse
+    pi_inv = []
+    for i in range(int(m)):               #same process as above except
+      if i % 2 != 0:
+        pi_inv.append(p[0])               #even indices now give s'
+      else:
+        pi_inv.append(p[1])               #and odd indices give s
+    pi_inv = list(map(neg, pi_inv))       #flip signs to denote inverses
+
+    #combining pi and pi inverse
+    relators.append(pi + pi_inv)
+
+  return relators
+
+##################################################################################
+## Subroutine Functions to reduce a coxeter/artin word and to create using conjugates ##
+##################################################################################
+
+### Display Functions for Generators and Relators in String Format ##
+SUB = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
+def coxeter_word_to_string(w):
+  return "".join(f's{i}'.translate(SUB) for i in w)
+
+def artin_word_to_string(w):
+  result = []
+  for i in w:
+    index = abs(i)
+    gen = f's{str(index).translate(SUB)}'
+    if i < 0:
+      gen += '⁻¹'
+    result.append(gen)
+  return "".join(result)
+
+### Checks if the coxeter matrix is a valid one 
+def is_coxeter_matrix(n, m):
+
+    # Converts values to numeric, fails if any non-numeric values
+    try:
+        m = m.astype(float)
+    except ValueError:
+        print("Non-numeric error: Matrix contains non-numeric entries.")
+        return
+
+
+    # Checks if input matrix is of size rank x rank
+    if m.shape != (n, n):
+        print(f"Invalid shape: Expected a square matrix of size {n}×{n}, but got {m.shape}.")
+        return
+
+    # Checks if diagonal entries are 1
+    if not np.all(np.diag(m) == 1):
+        print("Invalid diagonal: All diagonal entries must be 1 in a Coxeter matrix.")
+
+    # Check if matrix is symmetric (including handling NaN/inf)
+    if not np.allclose(m, m.T, equal_nan=True):
+        print("Symmetry error: Coxeter matrices must be symmetric across the diagonal.")
+        return
+
+    # Mask off diagonal ones if they exist
+    off_diagonal = ~np.eye(n, dtype=bool)
+    invalid_ones = (m == 1) & off_diagonal
+
+    # Checks for off diagonal ones
+    if np.any(invalid_ones):
+        print("Off-diagonal 1s detected: Only diagonal entries can be 1 in a Coxeter matrix.")
+        return
+
+    # Mask infinities before checking cast
+    is_inf = np.isinf(m)
+    is_pos_int = (m > 0) & ~is_inf & (m == np.floor(m))
+    valid_entries = is_inf | is_pos_int
+
+    # Checks if all values are positive, and if they are an integer or an infinity
+    if not np.all(valid_entries):
+        print("Entry error: All off-diagonal entries must be integers ≥ 2 or ∞.")
+        return
+
+    print("This is a valid Coxeter matrix.")
+
+### Subroutine A: reduces a coxeter word by removing adjacent equal generators iteratively.
+def reduce_coxeter_word(w):
+  reduced = True
+  while reduced:
+    reduced = False
+    i = 0
+    while i < len(w) - 1:
+      if w[i] == w[i+1]:
+        w = w[:i] + w[i+2:]
+        i = max(i-1,0)
+      else:
+        i += 1
+  return w
+
+def reduce_artin_word(w):
+  stack = []
+  for x in w:
+    if stack and stack[-1] == -x:
+      stack.pop()
+    else:
+      stack.append(x)
+  return stack
+
+### Subroutine B: creates a coxeter word using conjugates of the generators 
+from re import sub
+
+# Note: If there are only 2 or less generators present in the finite relators of a Coxeter Group the following function won't work
+##### If there are 2 generators present in the finite relators, the only valid trivial word is alternating between the generators (ie s1s2s1s2s1s2 repeating or s2s1s2s1s2s1 repeating)
+##### If there is only 1 generator present in the finite relators, abandon the activity as it is impossible to generate visually unreducable trivial words
+
+def subroutine_b_cox(t, set_of_generators, set_of_relators):
+  t = reduce_coxeter_word(t)
+  size_of_trivial = len(t)
+  insertion_point = random.randint(0, size_of_trivial)
+
+  #letters between insertion point
+  a = None
+  b = None
+  if size_of_trivial > 0:
+    if insertion_point > 0:
+        a = t[insertion_point - 1]
+    if insertion_point < size_of_trivial:
+        b = t[insertion_point]
+
+  ####### randomly generate word w
+  w_length = random.randint(1,10)
+  w = []
+  for i in range(w_length):
+    w.append(random.choice(set_of_generators))
+
+  # reduce w using subroutine A
+  w = reduce_coxeter_word(w)
+
+  if len(w) == 0:
+    return subroutine_b_cox(t, set_of_generators, set_of_relators)
+
+  # calculate w inverse(note its for coxeter group)
+  w_inv = w[::-1]
+
+  # make sure word w does not create visually reducable words
+  if (a is not None and a == w[0]) or (b is not None and w_inv[-1] == b):
+    return subroutine_b_cox(t, set_of_generators, set_of_relators)
+
+
+
+####### pick a relator that is not visually reducable
+####### Choose a relator that avoids obvious cancellation with w and w_inv
+  non_squares = [rel for rel in set_of_relators if rel[0] != rel[1]]
+  candidates = []
+
+  for rel in non_squares:
+      for rel_tuple in [rel, rel[::-1]]:
+          if w[-1] != rel_tuple[0] and rel_tuple[-1] != w_inv[0]:
+              candidates.append(rel_tuple)
+
+  if not candidates:
+      return subroutine_b_cox(t, set_of_generators, set_of_relators)
+
+  r = random.choice(candidates)
+
+  ####### Insert conjugate: w + r + w_inv
+  conjugate = w + list(r) + w_inv
+  t[insertion_point:insertion_point] = conjugate
+  return t
+
+# Note: good to run unless only 1 generator. Then, abandon.
+def subroutine_b_artin(t, set_of_generators, set_of_relators):
+    t = reduce_artin_word(t)
+    size_of_trivial = len(t)
+    insertion_point = random.randint(0, size_of_trivial)
+
+    # Get neighbors to avoid cancellation at insertion boundaries
+    a = t[insertion_point - 1] if insertion_point > 0 else None
+    b = None
+    if len(t) > 0:
+      b = t[insertion_point] if insertion_point < size_of_trivial else None
+
+    ####### Generate random reduced word w
+    w_length = random.randint(1, 10)
+    w = [random.choice(set_of_generators) for _ in range(w_length)]
+    w = reduce_artin_word(w)
+    if not w:
+        return subroutine_b_artin(t, set_of_generators, set_of_relators)
+
+    w_inv = [-g for g in reversed(w)]
+
+    # Early check: avoid reduction at boundaries with t
+    if (a is not None and w and a == -w[0]) or (b is not None and w_inv and w_inv[-1] == -b):
+        return subroutine_b_artin(t, set_of_generators, set_of_relators)
+
+
+    ####### Choose a non-reducing relator
+    valid_relators = []
+    for rel in set_of_relators:
+        # Skip trivial relators like (g, -g)
+        if len(rel) == 2 and rel[0] == -rel[1]:
+            continue
+        for rel_tuple in [list(rel), [-g for g in reversed(rel)]]:
+            if w and rel_tuple and w[-1] == -rel_tuple[0]:
+                continue  # would cancel with end of w
+            if rel_tuple and w_inv and rel_tuple[-1] == -w_inv[0]:
+                continue  # would cancel with start of w_inv
+            rel_reduced = reduce_artin_word(rel_tuple)
+            if not rel_reduced:
+              continue
+            valid_relators.append(rel_tuple)
+
+    if not valid_relators:
+        return subroutine_b_artin(t, set_of_generators, set_of_relators)
+
+    r = random.choice(valid_relators)
+
+    ####### Form conjugate and insert
+    conjugate = w + r + w_inv
+    t[insertion_point:insertion_point] = conjugate
+    return conjugate
+
+
+# Additional
+from typing import List, Tuple
+
+
+####################################################
+### Generate a trvial word using both subroutines ##
+####################################################
+
+# Function generating the trivial words
+def wordElongater(generators, relators, N: int, mode="coxeter") -> List[int]:
+  """
+  goal: generate a trivial word of length N by making it longer using subroutineB then removing 'aa' relations to make it less visibly reducible
+  """
+  word_creation_routine = None    #subroutine_b
+  reduce_visible_routine = None   #subroutine_a
+
+  if mode == "coxeter":
+    word_creation_routine = subroutine_b_cox
+    reduce_visible_routine = reduce_coxeter_word
+  elif mode == "artin":
+    word_creation_routine = subroutine_b_artin
+    reduce_visible_routine = reduce_artin_word
+
+
+  #initialize the empty word
+  tWord = []
+
+  # Check edge case where subroutine B wouldn't work (only 1 valid relator that only ever uses 2 generators)
+  # get at least 2 relators with at least 2 generators 
+  uniqueRels = []
+  if mode == "coxeter":
+    for rel in relators: 
+      if len(rel) <= 2:  # skip relators that are too short
+        continue
+      uniqueGens = set()
+      for gen in rel: 
+        uniqueGens.add(gen)
+      if len(uniqueGens) >= 2:
+        uniqueRels.append(rel)
+    # check if number of unique relators is less than 2
+    if len(uniqueRels) == 1:
+      rel = uniqueRels[0]
+      if random.random() < 0.5:
+        rel = rel[::-1]  # reverse the relator with 50% probability
+      return uniqueRels[0] * (N // len(uniqueRels[0])) 
+    elif len(uniqueRels) == 0:
+      raise ValueError("Not enough valid relators with at least 2 generators to elongate the word.")
+  elif mode == "artin":
+    if len(generators) == 1:
+      raise ValueError("Not enough generators to elongate the word.")
+
+
+  ## Subroutine B: Elongating the word
+  #run until desired size is reached (tWord will be of length: >= N)
+  tWord = word_creation_routine(tWord, generators, relators)  #1st pass
+  while( len(tWord) < N ):
+    tWord = word_creation_routine(tWord, generators, relators)
+
+
+  ## Subroutine A: removing the 'aa' visible trivial parts of a word
+  #tWord=subroutineA(tWord)
+  tWord = reduce_visible_routine(tWord)
+
+
+  #check that it's long enough, if it is then return tWord, if not then call again
+  if len(tWord) < N:
+    tWord = wordElongater(generators, relators, N, mode=mode)
+
+  return tWord
+
+
+## IO operations to write raw "datasets" to files 
+import os
+
+# create a folder to store the datasets
+DATA_FOLDER = "generated_datasets"
+if not os.path.exists(DATA_FOLDER):
+    os.makedirs(DATA_FOLDER)
+
+def getTimestamp():
+  return datetime.now().strftime("%Y-%m-%d")
+
+from datetime import datetime
+def createFileReturnPath(fileName, fileExtension=".txt", timestamp=None):
+  if timestamp is None:
+    timestamp = getTimestamp()
+  
+  # current date is passed through
+  if not fileName.endswith(fileExtension):
+    fileName += fileExtension
+  file_path = f"{DATA_FOLDER}/{timestamp}_{fileName}"
+  # if the file already exists, append a number to the file name
+  if os.path.exists(file_path):
+    base, ext = os.path.splitext(file_path)
+    counter = 1
+    while os.path.exists(file_path):
+      file_path = f"{DATA_FOLDER}/{timestamp}_{counter}-{fileName}{ext}"
+      counter += 1  
+  return file_path
+
+# both raw datasets are timestamped and saved in the DATA_FOLDER directory
+
+# take a set of parameters and the generators and relators to write a trivial dataset to a file
+def writeRawTrivialDataset(generators, relators, datasetSize, wordLength, timestamp=None, mode="coxeter"):
+  """ 
+  writes trivial dataset based on parameters provided 
+  generators: list of generators based on matrix 
+  relators: list of relators based on matrix
+  datasetSize: number of trivial words to generate (for this particular dataset)
+  wordLength: minimum length of each word to shoot for
+  
+  returns a list of trivial words that are of the same length as the wordLength parameter
+  """
+  # create and open file 
+  if timestamp == None:  
+    timestamp = getTimestamp()
+  file_path = createFileReturnPath("trivialWords.txt", fileExtension='.txt', timestamp=timestamp)
+  fileObj = open(file_path, mode="w")
+  
+  for i in range(datasetSize):
+    word_as_list = wordElongater(generators, relators, wordLength, mode=mode)
+    fileObj.write(" ".join(str(item) for item in word_as_list) + "\n")
+  return file_path 
+
+# take a trivial dataset and set of generators to return a similarly sized non trivial dataset
+def writeRawNontrivialDataset(trivialDataset, generators, timestamp=None):
+  """
+  trivialDataset: list of trivial words (each word is a list of generators) 
+  generators: list of generators based on matrix 
+  
+  returns the file path of the nontrivial words written to a file
+  note: mode is implied based on the generators given 
+  """
+  nontrivialDataset = []
+  # create matching likely non trivial word based on length of each trivial word it reads in a loop 
+  for trivialWord in trivialDataset:     
+    nontrivialWord = []
+    for i in range(len(trivialWord)):
+      randomGen = generators[random.randint(0, len(generators)-1)]
+      nontrivialWord.append(randomGen)
+    nontrivialDataset.append(nontrivialWord)
+
+  # create fileObj with a timestamp 
+  if timestamp == None:  
+    timestamp = getTimestamp()
+  file_path = createFileReturnPath("nontrivialWords.txt", fileExtension='.txt', timestamp=timestamp)
+  fileObj = open(file_path, mode="w")
+
+  # add the words to the nonTrivialWords.txt file (todo: in a random order)
+  for word_as_list in nontrivialDataset:
+    fileObj.write(" ".join(str(item) for item in word_as_list) + "\n")
+  return file_path  
+
+
+## Read dataset from file into memory 
+def readDataset(filepath:str):
+  words = []
+  with open(filepath) as fileObj:
+    for line in fileObj:
+      raw_list = line.split(" ")   #note: last gen has \n char as well
+      gen_list = list(map(int, raw_list))
+      lenWord = len(gen_list)
+      words.append(gen_list)
+  return words
+
+def getWordLengthFrequencies(dataset) -> List[Tuple[int,int]]:
+  frequencies = {}
+  for word in dataset:
+    wordLen = len(word)
+    if wordLen in frequencies:
+      frequencies[wordLen] += 1
+    else:
+      frequencies[wordLen] = 1
+  return frequencies
+
+# Create a plot for the frequencies dictionary
+def plotFrequencies(dataset):
+  #turn dataset into list of lengths
+  wordLengths = [len(word) for word in dataset]
+
+  plt.hist(wordLengths)
+
+
+import pandas as pd
+import ast
+from sklearn.model_selection import train_test_split
+def createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=None, test_size=0.3):
+    """
+    helper function called by 'makeMeMyData()' that returns the dataframes according to parameters you give it 
+    returns (trainDF, testDF) 
+    """
+    # Step 1: Read the raw data 
+    def loadRaw(filename, label):
+        with open(filename, 'r') as file:
+            lines = file.readlines()
+        # Each line is a list of tokens separated by spaces
+        return pd.DataFrame({
+            'tokens': [line.strip().split() for line in lines],
+            'label': label
+        })
+
+    # Load data from both classes
+    raw_tDF = loadRaw(rawTrivialPath, '0') #raw trivial dataframe
+    raw_ntDF = loadRaw(rawNontrivialPath, '1') #raw non-trivial dataframe
+
+    # combines both raw datasets into a single pandas dataframe
+    raw_df = pd.concat([raw_tDF, raw_ntDF]).sample(frac=1, random_state=42).reset_index(drop=True)
+
+    # creating 2 separate training and testing dataframes (modify test_size param)
+    train_df, test_df = train_test_split(raw_df, test_size=test_size, random_state=42, stratify=raw_df['label'])
+
+    # Optional: print or save
+    print("Training set size:", len(train_df))
+    print("Testing set size:", len(test_df))
+
+    # Save to CSV or use directly
+    train_path = createFileReturnPath('train.csv', fileExtension='.csv', timestamp=timestamp)
+    test_path = createFileReturnPath('test.csv', fileExtension='.csv', timestamp=timestamp)
+    train_df.to_csv(train_path, index=False)
+    test_df.to_csv(test_path, index=False)
+    
+    return (train_df, test_df)
+
+
+################################################################################
+## Actual Functions to generate and manipulate csv and dataframes of datasets ##
+################################################################################
+def makeMeMyData(coxeterMatrix, datasetSize, wordLength, timestamp=None, test_size="0.3", mode="coxeter"):
+    """ 
+    returns (trainDF, testDF)
+    """
+    if timestamp == None: 
+      timestamp = getTimestamp()
+    
+    generators = None  
+    relators = None
+    datasetSize = datasetSize // 2 
+    if mode == "coxeter":
+        is_coxeter_matrix(len(coxeterMatrix), coxeterMatrix)
+        generators = cox_gen(coxeterMatrix)
+        relators = cox_rel(coxeterMatrix)
+    elif mode == "artin":
+        print("can't run is_artin_matrix check, function does not exist")
+        generators = artin_gen(coxeterMatrix)
+        relators = artin_rel(coxeterMatrix)
+    
+    # create nontrivialwords.txt and trivialwords.txt 
+    rawTrivialPath = writeRawTrivialDataset(generators, relators, datasetSize, wordLength, timestamp=timestamp, mode=mode)
+    trivialDataset = readDataset(rawTrivialPath)
+    rawNontrivialPath = writeRawNontrivialDataset(trivialDataset, generators, timestamp=timestamp)
+    
+    trainDF, testDF = createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=timestamp)
+    
+    return trainDF, testDF
+
+def loadDataset(datasetName:str):
+    df = pd.read_csv(datasetName)  # ex: 'train.csv' or 'test.csv'
+
+    # Convert the 'tokens' column back to lists
+    df['tokens'] = df['tokens'].apply(ast.literal_eval)
+
+    return df
