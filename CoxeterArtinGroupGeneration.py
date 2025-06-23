@@ -425,7 +425,7 @@ def writeRawTrivialDataset(generators, relators, datasetSize, desiredWordLength,
   return file_path 
 
 # take a trivial dataset and set of generators to return a similarly sized non trivial dataset
-def writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, timestamp=None):
+def writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, mode="coxeter", timestamp=None):
   """
   trivialDataset: list of trivial words (each word is a list of generators) 
   generators: list of generators based on matrix 
@@ -434,6 +434,11 @@ def writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, times
   returns the file path of the nontrivial words written to a file
   note: mode is implied based on the generators given 
   """
+  if mode == "coxeter":
+    reduceWord = reduce_coxeter_word 
+  elif mode == "artin":
+    reduceWord = reduce_artin_word
+  
   nontrivialDataset = []
   # create matching likely non trivial word based on length of each trivial word it reads in a loop 
   for trivialWord in trivialDataset:     
@@ -444,6 +449,11 @@ def writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, times
     for i in range(lenTrivialWord):
       randomGen = generators[random.randint(0, len(generators)-1)]
       nontrivialWord.append(randomGen)
+    
+    # nonTrivial word generated here: 
+    nontrivialWord = reduceWord(nontrivialWord)   #remove sections that make the word "visibly reducible"
+    
+    #add words to list within this loop    
     nontrivialDataset.append(nontrivialWord)
 
   # create fileObj with a timestamp 
