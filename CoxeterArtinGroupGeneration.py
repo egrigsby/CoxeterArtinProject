@@ -296,7 +296,7 @@ from typing import List, Tuple
 ####################################################
 
 # Function generating the trivial words
-def wordElongater(generators, relators, N: int, mode="coxeter") -> List[int]:
+def wordElongater(generators, relators, N: int, desiredWordLength, mode="coxeter") -> List[int]:
   """
   goal: generate a trivial word of length N by making it longer using subroutineB then removing 'aa' relations to make it less visibly reducible
   """
@@ -353,11 +353,14 @@ def wordElongater(generators, relators, N: int, mode="coxeter") -> List[int]:
 
   #check that it's long enough, if it is then return tWord, if not then call again
   if len(tWord) < N:
-    tWord = wordElongater(generators, relators, N, mode=mode)
+    tWord = wordElongater(generators, relators, N, desiredWordLength, mode=mode)
+  #now at least of length 20
+  if len(tWord) >= desiredWordLength: #desiredWordLength derived from N+(some val)
+    tWord = wordElongater(generators, relators, N, desiredWordLength, mode=mode)
+  #now at least of length 35, fill up
 
-  if len(tWord) >= N + 15:
-    tWord = wordElongater(generators, relators, N, mode=mode)
-
+  # padding being done in file writing functions
+  
   return tWord
 
 
@@ -392,16 +395,20 @@ def createFileReturnPath(fileName, fileExtension=".txt", timestamp=None):
 
 # both raw datasets are timestamped and saved in the DATA_FOLDER directory
 
+def padWord(word_as_list, fixedWordLength):
+  fill = [0] * (fixedWordLength - len(word_as_list))
+  return word_as_list + fill
+
 # take a set of parameters and the generators and relators to write a trivial dataset to a file
-def writeRawTrivialDataset(generators, relators, datasetSize, wordLength, timestamp=None, mode="coxeter"):
+def writeRawTrivialDataset(generators, relators, datasetSize, desiredWordLength, fixedWordLength, timestamp=None, mode="coxeter"):
   """ 
   writes trivial dataset based on parameters provided 
   generators: list of generators based on matrix 
   relators: list of relators based on matrix
   datasetSize: number of trivial words to generate (for this particular dataset)
-  wordLength: minimum length of each word to shoot for
-  
-  returns a list of trivial words that are of the same length as the wordLength parameter
+  desiredWordLength: minimum length of each word to shoot for
+  fixedWordLength: fixed word length that all words will have, usually desired word length + some extra amount 
+  returns file path contianing list of trivial words of WordLength (includes padding )
   """
   # create and open file 
   if timestamp == None:  
@@ -410,15 +417,19 @@ def writeRawTrivialDataset(generators, relators, datasetSize, wordLength, timest
   fileObj = open(file_path, mode="w")
   
   for i in range(datasetSize):
-    word_as_list = wordElongater(generators, relators, wordLength, mode=mode)
+    word_as_list = wordElongater(generators, relators, desiredWordLength, fixedWordLength, mode=mode)
+    # padding to word done here. 
+    word_as_list = padWord(word_as_list, fixedWordLength)
     fileObj.write(" ".join(str(item) for item in word_as_list) + "\n")
+
   return file_path 
 
 # take a trivial dataset and set of generators to return a similarly sized non trivial dataset
-def writeRawNontrivialDataset(trivialDataset, generators, timestamp=None):
+def writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, timestamp=None):
   """
   trivialDataset: list of trivial words (each word is a list of generators) 
   generators: list of generators based on matrix 
+  fixedWordLength: fixed word length where padded with 0's are done at the end
   
   returns the file path of the nontrivial words written to a file
   note: mode is implied based on the generators given 
@@ -427,7 +438,10 @@ def writeRawNontrivialDataset(trivialDataset, generators, timestamp=None):
   # create matching likely non trivial word based on length of each trivial word it reads in a loop 
   for trivialWord in trivialDataset:     
     nontrivialWord = []
-    for i in range(len(trivialWord)):
+    
+    #get ACTUAL length of the trivial word (find len before a 0 is found)
+    lenTrivialWord = trivialWord.index(0)
+    for i in range(lenTrivialWord):
       randomGen = generators[random.randint(0, len(generators)-1)]
       nontrivialWord.append(randomGen)
     nontrivialDataset.append(nontrivialWord)
@@ -440,6 +454,7 @@ def writeRawNontrivialDataset(trivialDataset, generators, timestamp=None):
 
   # add the words to the nonTrivialWords.txt file (todo: in a random order)
   for word_as_list in nontrivialDataset:
+    word_as_list = padWord(word_as_list, fixedWordLength)
     fileObj.write(" ".join(str(item) for item in word_as_list) + "\n")
   return file_path  
 
@@ -517,7 +532,7 @@ def createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=None, 
 ################################################################################
 ## Actual Functions to generate and manipulate csv and dataframes of datasets ##
 ################################################################################
-def makeMeMyData(coxeterMatrix, datasetSize, wordLength, timestamp=None, test_size="0.3", mode="coxeter"):
+def makeMeMyData(coxeterMatrix, datasetSize, desiredWordLength, fixedWordLength, timestamp=None, test_size="0.3", mode="coxeter"):
     """ 
     returns (trainDF, testDF)
     """
@@ -537,9 +552,9 @@ def makeMeMyData(coxeterMatrix, datasetSize, wordLength, timestamp=None, test_si
         relators = artin_rel(coxeterMatrix)
     
     # create nontrivialwords.txt and trivialwords.txt 
-    rawTrivialPath = writeRawTrivialDataset(generators, relators, datasetSize, wordLength, timestamp=timestamp, mode=mode)
+    rawTrivialPath = writeRawTrivialDataset(generators, relators, datasetSize, desiredWordLength, fixedWordLength, timestamp=timestamp, mode=mode)
     trivialDataset = readDataset(rawTrivialPath)
-    rawNontrivialPath = writeRawNontrivialDataset(trivialDataset, generators, timestamp=timestamp)
+    rawNontrivialPath = writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, timestamp=timestamp)
     
     trainDF, testDF = createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=timestamp)
     
