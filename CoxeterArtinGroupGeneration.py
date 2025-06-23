@@ -310,7 +310,6 @@ def wordElongater(generators, relators, N: int, desiredWordLength, mode="coxeter
     word_creation_routine = subroutine_b_artin
     reduce_visible_routine = reduce_artin_word
 
-
   #initialize the empty word
   tWord = []
 
@@ -338,29 +337,27 @@ def wordElongater(generators, relators, N: int, desiredWordLength, mode="coxeter
     if len(generators) == 1:
       raise ValueError("Not enough generators to elongate the word.")
 
-
   ## Subroutine B: Elongating the word
   #run until desired size is reached (tWord will be of length: >= N)
   tWord = word_creation_routine(tWord, generators, relators)  #1st pass
   while( len(tWord) < N ):
     tWord = word_creation_routine(tWord, generators, relators)
 
-
   ## Subroutine A: removing the 'aa' visible trivial parts of a word
   #tWord=subroutineA(tWord)
   tWord = reduce_visible_routine(tWord)
 
+  # new logic: keep elongating until word reaches fixedWordLength exactly
+  while len(tWord) < 15:
+    tWord = word_creation_routine(tWord, generators, relators)
+    tWord = reduce_visible_routine(tWord)
 
-  #check that it's long enough, if it is then return tWord, if not then call again
-  if len(tWord) < N:
-    tWord = wordElongater(generators, relators, N, desiredWordLength, mode=mode)
-  #now at least of length 20
-  if len(tWord) >= desiredWordLength: #desiredWordLength derived from N+(some val)
-    tWord = wordElongater(generators, relators, N, desiredWordLength, mode=mode)
-  #now at least of length 35, fill up
+  # truncate if still too long
+  if len(tWord) > 15:
+    tWord = tWord[:15]
 
   # padding being done in file writing functions
-  
+
   return tWord
 
 
