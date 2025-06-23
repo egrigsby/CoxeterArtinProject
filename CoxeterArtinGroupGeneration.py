@@ -453,6 +453,8 @@ def writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, mode=
     # nonTrivial word generated here: 
     nontrivialWord = reduceWord(nontrivialWord)   #remove sections that make the word "visibly reducible"
     
+    #TODO use lenTrivialWord to add more random generators after visibily reducing nontrivialWord and try and reduce word again
+    
     #add words to list within this loop    
     nontrivialDataset.append(nontrivialWord)
 
@@ -564,7 +566,7 @@ def makeMeMyData(coxeterMatrix, datasetSize, desiredWordLength, fixedWordLength,
     # create nontrivialwords.txt and trivialwords.txt 
     rawTrivialPath = writeRawTrivialDataset(generators, relators, datasetSize, desiredWordLength, fixedWordLength, timestamp=timestamp, mode=mode)
     trivialDataset = readDataset(rawTrivialPath)
-    rawNontrivialPath = writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, timestamp=timestamp)
+    rawNontrivialPath = writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, mode=mode, timestamp=timestamp)
     
     trainDF, testDF = createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=timestamp)
     
