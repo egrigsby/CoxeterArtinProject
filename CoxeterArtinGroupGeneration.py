@@ -355,6 +355,9 @@ def wordElongater(generators, relators, N: int, mode="coxeter") -> List[int]:
   if len(tWord) < N:
     tWord = wordElongater(generators, relators, N, mode=mode)
 
+  if len(tWord) >= N + 15:
+    tWord = wordElongater(generators, relators, N, mode=mode)
+
   return tWord
 
 
