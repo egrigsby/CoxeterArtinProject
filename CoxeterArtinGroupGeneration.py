@@ -347,15 +347,14 @@ def wordElongater(generators, relators, N: int, desiredWordLength, mode="coxeter
   #tWord=subroutineA(tWord)
   tWord = reduce_visible_routine(tWord)
 
-  # new logic: keep elongating until word reaches fixedWordLength exactly
-  while len(tWord) < 15:
-    tWord = word_creation_routine(tWord, generators, relators)
-    tWord = reduce_visible_routine(tWord)
-
-  # truncate if still too long
-  if len(tWord) > 15:
-    tWord = tWord[:15]
-
+  #check that it's long enough, if it is then return tWord, if not then call again
+  if len(tWord) < N:
+    tWord = wordElongater(generators, relators, N, desiredWordLength, mode=mode)
+  #now at least of length 20
+  if len(tWord) >= desiredWordLength: #desiredWordLength derived from N+(some val)
+    tWord = wordElongater(generators, relators, N, desiredWordLength, mode=mode)
+  #now at least of length 35, cuts of really long words, uses fixedWordLength max to create in between desiredWordLength
+  
   # padding being done in file writing functions
 
   return tWord
@@ -397,7 +396,7 @@ def padWord(word_as_list, fixedWordLength):
   return word_as_list + fill
 
 # take a set of parameters and the generators and relators to write a trivial dataset to a file
-def writeRawTrivialDataset(generators, relators, datasetSize, desiredWordLength, fixedWordLength, timestamp=None, mode="coxeter"):
+def writeRawTrivialDataset(generators, relators, datasetSize, N, fixedWordLength, timestamp=None, mode="coxeter"):
   """ 
   writes trivial dataset based on parameters provided 
   generators: list of generators based on matrix 
@@ -413,8 +412,11 @@ def writeRawTrivialDataset(generators, relators, datasetSize, desiredWordLength,
   file_path = createFileReturnPath("trivialWords.txt", fileExtension='.txt', timestamp=timestamp)
   fileObj = open(file_path, mode="w")
   
+  #get desiredWordLength value in between: N , desiredWordLength, fixedWordLength 
+  desiredWordLength = (fixedWordLength + N) // 2    # get in between 
+  
   for i in range(datasetSize):
-    word_as_list = wordElongater(generators, relators, desiredWordLength, fixedWordLength, mode=mode)
+    word_as_list = wordElongater(generators, relators, N, desiredWordLength, mode=mode)
     # padding to word done here. 
     word_as_list = padWord(word_as_list, fixedWordLength)
     fileObj.write(" ".join(str(item) for item in word_as_list) + "\n")
@@ -442,14 +444,23 @@ def writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, mode=
     nontrivialWord = []
     
     #get ACTUAL length of the trivial word (find len before a 0 is found)
-    lenTrivialWord = trivialWord.index(0)
+    try: 
+      lenTrivialWord = trivialWord.index(0)
+    except ValueError:
+      lenTrivialWord = len(trivialWord)
+      
+    prevWord = 0
+    randomGen = generators[random.randint(0, len(generators)-1)]
     for i in range(lenTrivialWord):
-      randomGen = generators[random.randint(0, len(generators)-1)]
+      while prevWord == randomGen: 
+        randomGen = generators[random.randint(0, len(generators)-1)]
+      #add some different generator that doesn't match the last one
       nontrivialWord.append(randomGen)
+      prevWord = randomGen
+
     
     # nonTrivial word generated here: 
-    nontrivialWord = reduceWord(nontrivialWord)   #remove sections that make the word "visibly reducible"
-    
+    #nontrivialWord = reduceWord(nontrivialWord)   #remove sections that make the word "visibly reducible"
     #TODO use lenTrivialWord to add more random generators after visibily reducing nontrivialWord and try and reduce word again
     
     #add words to list within this loop    
@@ -576,3 +587,17 @@ def loadDataset(datasetName:str):
     df['tokens'] = df['tokens'].apply(ast.literal_eval)
 
     return df
+
+
+#coxeterMatrix = np.array([
+#    [1, 3, 2, 2],
+#    [3, 1, 3, 2],
+#    [2, 3, 1, 3],
+#    [2, 2, 3, 1]
+#])
+#min_wordLen = 20
+#fixed_wordSize = min_wordLen + 5   #words all of size 15
+#timestamp = getTimestamp()
+#print(f"Timestamp: {timestamp}")
+#trainDF, testDF = makeMeMyData(coxeterMatrix, 20000, min_wordLen, fixed_wordSize, timestamp, test_size="0.3", mode='coxeter')
+## will generate words between 20-25, with a minimum actual word of 20, 
