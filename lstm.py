@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt  #data visualization
 """Prep dataset"""
 
 class WordDataset(Dataset):
-  def __init__(self, data_dir, sequence_length=30):  #update with dataset for the time being
+  def __init__(self, data_dir, sequence_length=26):  #update with dataset for the time being
     df = pd.read_csv(data_dir)
     df['tokens'] = df['tokens'].apply(ast.literal_eval)   #turns string representations of list under column 'tokens' into actual lists
 
@@ -64,17 +64,17 @@ class TrivialWordLSTM(nn.Module):
       return torch.sigmoid(out)     #apply sigmoid to output for binary classification probability (between 0 and 1)
 
 #training dataset
-train_set = WordDataset(data_dir='/content/2025-06-23_train(15).csv') #need to upload files and check paths every time; if a syntax error is raised, make sure paths contain backslashes, NOT forward slashes
+train_set = WordDataset(data_dir='C:/Users/xiongce/CoxeterArtinProject/generated_datasets/1_2025-06-25-train.csv') #need to upload files and check paths every time; if a syntax error is raised, make sure paths contain backslashes, NOT forward slashes
 train_loader = DataLoader(train_set, batch_size=64, shuffle=True)
 
 #validation dataset
-val_set = WordDataset(data_dir='/content/2025-06-23_test(15).csv')
+val_set = WordDataset(data_dir='C:/Users/xiongce/CoxeterArtinProject/generated_datasets/1_2025-06-25-test.csv')
 val_loader = DataLoader(val_set, batch_size=64, shuffle=False)
 
 #model parameters
 vocab_size = train_set.vocab_size   #build vocab size on training data
-embedding_dim = 4   #token embedding dimension
-hidden_size = 16    #size of LSTM hidden state
+embedding_dim = 128   #token embedding dimension
+hidden_size = 256    #size of LSTM hidden state
 num_layers = 1      #number of LSTM layers
 
 model = TrivialWordLSTM(vocab_size, embedding_dim, hidden_size, num_layers)
@@ -85,10 +85,12 @@ optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)   #takes
 
 """Training loop"""
 
-num_epochs = 1000
-sequence_length = 30  #update with dataset for the time being
+num_epochs = 10000
+sequence_length = 26  #update with dataset for the time being
 
 train_losses, val_losses = [],[]
+val_accuracies = []  #list to store accuracies
+
 start = time.time()  #timer start
 
 for epoch in range(num_epochs):
@@ -143,6 +145,9 @@ for epoch in range(num_epochs):
     print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Test Loss: {avg_val_loss:.4f}, Accuracy: {100 * correct / total:.4f}%')
     end = time.time()  #timer end
 
+    accuracy = 100 * correct / total
+    val_accuracies.append(accuracy)
+
 elapsed = end - start
 print(f'Process completed in {elapsed:.4f} seconds.')
 
@@ -155,4 +160,11 @@ plt.xlabel("Epochs")
 plt.ylabel("Loss")
 plt.yscale('log') #toggle on/off as needed
 plt.legend()
+plt.show()
+
+plt.figure(figsize=(10,5))
+plt.title("Accuracy")
+plt.plot(val_accuracies)
+plt.xlabel("Epochs")
+plt.ylabel("Accuracy")
 plt.show()
