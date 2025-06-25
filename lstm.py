@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import torch
 import torch.nn as nn   #neural networks functions
 import torch.optim as optim   #optimizers
@@ -64,7 +63,7 @@ class TrivialWordLSTM(nn.Module):
       return torch.sigmoid(out)     #apply sigmoid to output for binary classification probability (between 0 and 1)
 
 #training dataset
-train_set = WordDataset(data_dir='/content/2025-06-23_train(15).csv') #need to upload files and check paths every time
+train_set = WordDataset(data_dir='/content/2025-06-23_train(15).csv') #need to upload files and check paths every time; if a syntax error is raised, make sure paths contain backslashes, NOT forward slashes
 train_loader = DataLoader(train_set, batch_size=32, shuffle=True)
 
 #validation dataset
@@ -79,13 +78,13 @@ num_layers = 1      #number of LSTM layers
 
 model = TrivialWordLSTM(vocab_size, embedding_dim, hidden_size, num_layers)
 
-criterion = nn.BCELoss()    #binary cross entropy loss, for binary classification
+criterion = nn.BCELoss()    #binary cross entropy loss
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)   #takes in model parameters, learning rate, weight decay
 #optimizer = optim.AdamW(model.parameters(), lr=0.001)
 
 """Training loop"""
 
-num_epochs = 10
+num_epochs = 1000
 sequence_length = 15
 
 train_losses, val_losses = [],[]
@@ -97,7 +96,7 @@ for epoch in range(num_epochs):
     for batch_item in train_loader:
         X_batch = batch_item[0]
         y_batch = batch_item[1]
-        y_batch = y_batch.unsqueeze(-1)  #match output shape for BCELoss (batch_size, 1)
+        y_batch = y_batch.unsqueeze(-1)  #match output shape for BCELoss (batch_size, 1) by adding a dimension at the -1 position
 
         outputs = model(X_batch)
         loss = criterion(outputs, y_batch)
@@ -138,7 +137,6 @@ for epoch in range(num_epochs):
         predicted = (outputs > 0.5).float()
         total += labels.size(0)
         correct += (predicted == labels.unsqueeze(-1)).sum().item()
-
 
     print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Test Loss: {avg_val_loss:.4f}, Accuracy: {100 * correct / total:.4f}%')
 
