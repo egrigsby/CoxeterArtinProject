@@ -6,12 +6,13 @@ from torch.utils.data import DataLoader, Dataset
 import numpy as np
 import pandas as pd
 import ast
-import matplotlib.pyplot as plt
+import time  #for simple timer
+import matplotlib.pyplot as plt  #data visualization
 
 """Prep dataset"""
 
 class WordDataset(Dataset):
-  def __init__(self, data_dir, sequence_length=15):
+  def __init__(self, data_dir, sequence_length=30):  #update with dataset for the time being
     df = pd.read_csv(data_dir)
     df['tokens'] = df['tokens'].apply(ast.literal_eval)   #turns string representations of list under column 'tokens' into actual lists
 
@@ -64,11 +65,11 @@ class TrivialWordLSTM(nn.Module):
 
 #training dataset
 train_set = WordDataset(data_dir='/content/2025-06-23_train(15).csv') #need to upload files and check paths every time; if a syntax error is raised, make sure paths contain backslashes, NOT forward slashes
-train_loader = DataLoader(train_set, batch_size=32, shuffle=True)
+train_loader = DataLoader(train_set, batch_size=64, shuffle=True)
 
 #validation dataset
 val_set = WordDataset(data_dir='/content/2025-06-23_test(15).csv')
-val_loader = DataLoader(val_set, batch_size=32, shuffle=False)
+val_loader = DataLoader(val_set, batch_size=64, shuffle=False)
 
 #model parameters
 vocab_size = train_set.vocab_size   #build vocab size on training data
@@ -85,9 +86,10 @@ optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)   #takes
 """Training loop"""
 
 num_epochs = 1000
-sequence_length = 15
+sequence_length = 30  #update with dataset for the time being
 
 train_losses, val_losses = [],[]
+start = time.time()  #timer start
 
 for epoch in range(num_epochs):
     model.train()
@@ -139,6 +141,10 @@ for epoch in range(num_epochs):
         correct += (predicted == labels.unsqueeze(-1)).sum().item()
 
     print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Test Loss: {avg_val_loss:.4f}, Accuracy: {100 * correct / total:.4f}%')
+    end = time.time()  #timer end
+
+elapsed = end - start
+print(f'Process completed in {elapsed:.4f} seconds.')
 
 #graphing
 plt.figure(figsize=(10,5))
