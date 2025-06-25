@@ -296,7 +296,7 @@ from typing import List, Tuple
 ####################################################
 
 # Function generating the trivial words
-def wordElongater(generators, relators, N: int, desiredWordLength, mode="coxeter") -> List[int]:
+def wordElongater(generators, relators, minWordLength, maxWordLength, mode="coxeter") -> List[int]:
   """
   goal: generate a trivial word of length N by making it longer using subroutineB then removing 'aa' relations to make it less visibly reducible
   """
@@ -330,7 +330,7 @@ def wordElongater(generators, relators, N: int, desiredWordLength, mode="coxeter
       rel = uniqueRels[0]
       if random.random() < 0.5:
         rel = rel[::-1]  # reverse the relator with 50% probability
-      return uniqueRels[0] * (N // len(uniqueRels[0])) 
+      return uniqueRels[0] * (minWordLength // len(uniqueRels[0])) 
     elif len(uniqueRels) == 0:
       raise ValueError("Not enough valid relators with at least 2 generators to elongate the word.")
   elif mode == "artin":
@@ -340,7 +340,7 @@ def wordElongater(generators, relators, N: int, desiredWordLength, mode="coxeter
   ## Subroutine B: Elongating the word
   #run until desired size is reached (tWord will be of length: >= N)
   tWord = word_creation_routine(tWord, generators, relators)  #1st pass
-  while( len(tWord) < N ):
+  while( len(tWord) < minWordLength ):
     tWord = word_creation_routine(tWord, generators, relators)
 
   ## Subroutine A: removing the 'aa' visible trivial parts of a word
@@ -348,11 +348,11 @@ def wordElongater(generators, relators, N: int, desiredWordLength, mode="coxeter
   tWord = reduce_visible_routine(tWord)
 
   #check that it's long enough, if it is then return tWord, if not then call again
-  if len(tWord) < N:
-    tWord = wordElongater(generators, relators, N, desiredWordLength, mode=mode)
+  if len(tWord) < minWordLength:
+    tWord = wordElongater(generators, relators, minWordLength, maxWordLength, mode=mode)
   #now at least of length 20
-  if len(tWord) >= desiredWordLength: #desiredWordLength derived from N+(some val)
-    tWord = wordElongater(generators, relators, N, desiredWordLength, mode=mode)
+  if len(tWord) > maxWordLength: #desiredWordLength derived from N+(some val)
+    tWord = wordElongater(generators, relators, minWordLength, maxWordLength, mode=mode)
   #now at least of length 35, cuts of really long words, uses fixedWordLength max to create in between desiredWordLength
   
   # padding being done in file writing functions
@@ -385,7 +385,7 @@ def createFileReturnPath(fileName, fileExtension=".txt", timestamp=None):
     base, ext = os.path.splitext(file_path)
     counter = 1
     while os.path.exists(file_path):
-      file_path = f"{DATA_FOLDER}/{timestamp}_{counter}-{fileName}{ext}"
+      file_path = f"{DATA_FOLDER}/{counter}_{timestamp}-{fileName}"   #fileName include ext (.txt) 
       counter += 1  
   return file_path
 
@@ -396,7 +396,7 @@ def padWord(word_as_list, fixedWordLength):
   return word_as_list + fill
 
 # take a set of parameters and the generators and relators to write a trivial dataset to a file
-def writeRawTrivialDataset(generators, relators, datasetSize, N, fixedWordLength, timestamp=None, mode="coxeter"):
+def writeRawTrivialDataset(generators, relators, datasetSize, minWordLength, maxWordLength, fixedWordLength, timestamp=None, mode="coxeter"):
   """ 
   writes trivial dataset based on parameters provided 
   generators: list of generators based on matrix 
@@ -413,10 +413,9 @@ def writeRawTrivialDataset(generators, relators, datasetSize, N, fixedWordLength
   fileObj = open(file_path, mode="w")
   
   #get desiredWordLength value in between: N , desiredWordLength, fixedWordLength 
-  desiredWordLength = (fixedWordLength + N) // 2    # get in between 
   
   for i in range(datasetSize):
-    word_as_list = wordElongater(generators, relators, N, desiredWordLength, mode=mode)
+    word_as_list = wordElongater(generators, relators, minWordLength, maxWordLength, mode=mode)
     # padding to word done here. 
     word_as_list = padWord(word_as_list, fixedWordLength)
     fileObj.write(" ".join(str(item) for item in word_as_list) + "\n")
@@ -552,7 +551,7 @@ def createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=None, 
 ################################################################################
 ## Actual Functions to generate and manipulate csv and dataframes of datasets ##
 ################################################################################
-def makeMeMyData(coxeterMatrix, datasetSize, desiredWordLength, fixedWordLength, timestamp=None, test_size="0.3", mode="coxeter"):
+def makeMeMyData(coxeterMatrix, datasetSize, minWordLength, maxWordLength, fixedWordLength, timestamp=None, test_size="0.3", mode="coxeter"):
     """ 
     returns (trainDF, testDF)
     """
@@ -572,7 +571,7 @@ def makeMeMyData(coxeterMatrix, datasetSize, desiredWordLength, fixedWordLength,
         relators = artin_rel(coxeterMatrix)
     
     # create nontrivialwords.txt and trivialwords.txt 
-    rawTrivialPath = writeRawTrivialDataset(generators, relators, datasetSize, desiredWordLength, fixedWordLength, timestamp=timestamp, mode=mode)
+    rawTrivialPath = writeRawTrivialDataset(generators, relators, datasetSize, minWordLength, maxWordLength, fixedWordLength, timestamp=timestamp, mode=mode)
     trivialDataset = readDataset(rawTrivialPath)
     rawNontrivialPath = writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, mode=mode, timestamp=timestamp)
     
@@ -595,8 +594,8 @@ def loadDataset(datasetName:str):
 #    [2, 3, 1, 3],
 #    [2, 2, 3, 1]
 #])
-#min_wordLen = 20
-#fixed_wordSize = min_wordLen + 5   #words all of size 15
+#min_wordLen = 10
+#fixed_wordSize = min_wordLen + 6   #words all of size 50
 #timestamp = getTimestamp()
 #print(f"Timestamp: {timestamp}")
 #trainDF, testDF = makeMeMyData(coxeterMatrix, 20000, min_wordLen, fixed_wordSize, timestamp, test_size="0.3", mode='coxeter')
