@@ -510,7 +510,7 @@ def plotFrequencies(dataset):
 import pandas as pd
 import ast
 from sklearn.model_selection import train_test_split
-def createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=None, test_size=0.3):
+def createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=None, train_size=0.3):
     """
     helper function called by 'makeMeMyData()' that returns the dataframes according to parameters you give it 
     returns (trainDF, testDF) 
@@ -533,7 +533,8 @@ def createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=None, 
     raw_df = pd.concat([raw_tDF, raw_ntDF]).sample(frac=1, random_state=42).reset_index(drop=True)
 
     # creating 2 separate training and testing dataframes (modify test_size param)
-    train_df, test_df = train_test_split(raw_df, test_size=test_size, random_state=42, stratify=raw_df['label'])
+    test_size = 1 - train_size    #NOTE: modified so that param into this function is train_size, test_size is just 1-train_size 
+    train_df, test_df = train_test_split(raw_df, test_size=test_size, train_size=train_size, random_state=42, stratify=raw_df['label'])
 
     # Optional: print or save
     print("Training set size:", len(train_df))
@@ -551,7 +552,7 @@ def createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=None, 
 ################################################################################
 ## Actual Functions to generate and manipulate csv and dataframes of datasets ##
 ################################################################################
-def makeMeMyData(coxeterMatrix, datasetSize, minWordLength, maxWordLength, fixedWordLength, timestamp=None, test_size="0.3", mode="coxeter"):
+def makeMeMyData(coxeterMatrix, datasetSize, minWordLength, maxWordLength, fixedWordLength, timestamp=None, train_size=0.3, mode="coxeter"):
     """ 
     returns (trainDF, testDF)
     """
@@ -575,7 +576,8 @@ def makeMeMyData(coxeterMatrix, datasetSize, minWordLength, maxWordLength, fixed
     trivialDataset = readDataset(rawTrivialPath)
     rawNontrivialPath = writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, mode=mode, timestamp=timestamp)
     
-    trainDF, testDF = createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=timestamp)
+    #adding split parameter explicitly 
+    trainDF, testDF = createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=timestamp, train_size=train_size)
     
     return trainDF, testDF
 
