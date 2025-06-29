@@ -290,7 +290,6 @@ def subroutine_b_artin(t, set_of_generators, set_of_relators):
 # Additional
 from typing import List, Tuple
 
-
 ####################################################
 ### Generate a trvial word using both subroutines ##
 ####################################################
@@ -373,6 +372,7 @@ def getTimestamp():
   return datetime.now().strftime("%Y-%m-%d")
 
 from datetime import datetime
+# TODO delete, no longer in use
 def createFileReturnPath(fileName, fileExtension=".txt", timestamp=None):
   if timestamp is None:
     timestamp = getTimestamp()
@@ -395,89 +395,6 @@ def createFileReturnPath(fileName, fileExtension=".txt", timestamp=None):
 def padWord(word_as_list, fixedWordLength):
   fill = [0] * (fixedWordLength - len(word_as_list))
   return word_as_list + fill
-
-# take a set of parameters and the generators and relators to write a trivial dataset to a file
-def writeRawTrivialDataset(generators, relators, datasetSize, minWordLength, maxWordLength, fixedWordLength, timestamp=None, mode="coxeter"):
-  """ 
-  writes trivial dataset based on parameters provided 
-  generators: list of generators based on matrix 
-  relators: list of relators based on matrix
-  datasetSize: number of trivial words to generate (for this particular dataset)
-  desiredWordLength: minimum length of each word to shoot for
-  fixedWordLength: fixed word length that all words will have, usually desired word length + some extra amount 
-  returns file path contianing list of trivial words of WordLength (includes padding )
-  """
-  # create and open file 
-  if timestamp == None:  
-    timestamp = getTimestamp()
-  file_path = createFileReturnPath("trivialWords.txt", fileExtension='.txt', timestamp=timestamp)
-  fileObj = open(file_path, mode="w")
-  
-  #get desiredWordLength value in between: N , desiredWordLength, fixedWordLength 
-  
-  for i in range(datasetSize):
-    word_as_list = wordElongater(generators, relators, minWordLength, maxWordLength, mode=mode)
-    # padding to word done here. 
-    word_as_list = padWord(word_as_list, fixedWordLength)
-    fileObj.write(" ".join(str(item) for item in word_as_list) + "\n")
-
-  return file_path 
-
-# take a trivial dataset and set of generators to return a similarly sized non trivial dataset
-def writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, mode="coxeter", timestamp=None):
-  """
-  trivialDataset: list of trivial words (each word is a list of generators) 
-  generators: list of generators based on matrix 
-  fixedWordLength: fixed word length where padded with 0's are done at the end
-  
-  returns the file path of the nontrivial words written to a file
-  note: mode is implied based on the generators given 
-  """
-  if mode == "coxeter":
-    reduceWord = reduce_coxeter_word 
-  elif mode == "artin":
-    reduceWord = reduce_artin_word
-  
-  nontrivialDataset = []
-  # create matching likely non trivial word based on length of each trivial word it reads in a loop 
-  for trivialWord in trivialDataset:     
-    nontrivialWord = []
-    
-    #get ACTUAL length of the trivial word (find len before a 0 is found)
-    try: 
-      lenTrivialWord = trivialWord.index(0)
-    except ValueError:
-      lenTrivialWord = len(trivialWord)
-      
-    prevWord = 0
-    randomGen = generators[random.randint(0, len(generators)-1)]
-    for i in range(lenTrivialWord):
-      while prevWord == randomGen: 
-        randomGen = generators[random.randint(0, len(generators)-1)]
-      #add some different generator that doesn't match the last one
-      nontrivialWord.append(randomGen)
-      prevWord = randomGen
-
-    
-    # nonTrivial word generated here: 
-    #nontrivialWord = reduceWord(nontrivialWord)   #remove sections that make the word "visibly reducible"
-    #TODO use lenTrivialWord to add more random generators after visibily reducing nontrivialWord and try and reduce word again
-    
-    #add words to list within this loop    
-    nontrivialDataset.append(nontrivialWord)
-
-  # create fileObj with a timestamp 
-  if timestamp == None:  
-    timestamp = getTimestamp()
-  file_path = createFileReturnPath("nontrivialWords.txt", fileExtension='.txt', timestamp=timestamp)
-  fileObj = open(file_path, mode="w")
-
-  # add the words to the nonTrivialWords.txt file (todo: in a random order)
-  for word_as_list in nontrivialDataset:
-    word_as_list = padWord(word_as_list, fixedWordLength)
-    fileObj.write(" ".join(str(item) for item in word_as_list) + "\n")
-  return file_path  
-
 
 ## Read dataset from file into memory 
 def readDataset(filepath:str):
@@ -508,80 +425,12 @@ def plotFrequencies(dataset):
   plt.hist(wordLengths)
 
 
-import pandas as pd
-import ast
-from sklearn.model_selection import train_test_split
-def createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=None, train_size=0.3):
-    """
-    helper function called by 'makeMeMyData()' that returns the dataframes according to parameters you give it 
-    returns (trainDF, testDF) 
-    """
-    # Step 1: Read the raw data 
-    def loadRaw(filename, label):
-        with open(filename, 'r') as file:
-            lines = file.readlines()
-        # Each line is a list of tokens separated by spaces
-        return pd.DataFrame({
-            'tokens': [line.strip().split() for line in lines],
-            'label': label
-        })
-
-    # Load data from both classes
-    raw_tDF = loadRaw(rawTrivialPath, '0') #raw trivial dataframe
-    raw_ntDF = loadRaw(rawNontrivialPath, '1') #raw non-trivial dataframe
-
-    # combines both raw datasets into a single pandas dataframe
-    raw_df = pd.concat([raw_tDF, raw_ntDF]).sample(frac=1, random_state=42).reset_index(drop=True)
-
-    # creating 2 separate training and testing dataframes (modify test_size param)
-    test_size = 1 - train_size    #NOTE: modified so that param into this function is train_size, test_size is just 1-train_size 
-    train_df, test_df = train_test_split(raw_df, test_size=test_size, train_size=train_size, random_state=42, stratify=raw_df['label'])
-
-    # Optional: print or save
-    print("Training set size:", len(train_df))
-    print("Testing set size:", len(test_df))
-
-    # Save to CSV or use directly
-    train_path = createFileReturnPath('train.csv', fileExtension='.csv', timestamp=timestamp)
-    test_path = createFileReturnPath('test.csv', fileExtension='.csv', timestamp=timestamp)
-    train_df.to_csv(train_path, index=False)
-    test_df.to_csv(test_path, index=False)
-    
-    return (train_df, test_df)
-
-
 ################################################################################
 ## Actual Functions to generate and manipulate csv and dataframes of datasets ##
 ################################################################################
-def makeMeMyData(coxeterMatrix, datasetSize, minWordLength, maxWordLength, fixedWordLength, timestamp=None, train_size=0.3, mode="coxeter"):
-    """ 
-    returns (trainDF, testDF)
-    """
-    if timestamp == None: 
-      timestamp = getTimestamp()
-    
-    generators = None  
-    relators = None
-    datasetSize = datasetSize // 2 
-    if mode == "coxeter":
-        is_coxeter_matrix(len(coxeterMatrix), coxeterMatrix)
-        generators = cox_gen(coxeterMatrix)
-        relators = cox_rel(coxeterMatrix)
-    elif mode == "artin":
-        print("can't run is_artin_matrix check, function does not exist")
-        generators = artin_gen(coxeterMatrix)
-        relators = artin_rel(coxeterMatrix)
-    
-    # create nontrivialwords.txt and trivialwords.txt 
-    rawTrivialPath = writeRawTrivialDataset(generators, relators, datasetSize, minWordLength, maxWordLength, fixedWordLength, timestamp=timestamp, mode=mode)
-    trivialDataset = readDataset(rawTrivialPath)
-    rawNontrivialPath = writeRawNontrivialDataset(trivialDataset, generators, fixedWordLength, mode=mode, timestamp=timestamp)
-    
-    #adding split parameter explicitly 
-    trainDF, testDF = createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, timestamp=timestamp, train_size=train_size)
-    
-    return trainDF, testDF
-
+import pandas as pd
+import ast
+from sklearn.model_selection import train_test_split
 def loadDataset(datasetName:str):
     df = pd.read_csv(datasetName)  # ex: 'train.csv' or 'test.csv'
 
@@ -688,7 +537,6 @@ class DataGenerator:
     if s.timestamp == None:  
       s.timestamp = getTimestamp()
     
-    #file_path = createFileReturnPath(s.trivialFile, fileExtension='.txt', timestamp=timestamp)
     file_path = os.path.join(s.datasetPath, s.trivialFile)
     fileObj = open(file_path, mode="w")
     
