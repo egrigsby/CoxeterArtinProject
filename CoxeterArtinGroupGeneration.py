@@ -295,6 +295,7 @@ from typing import List, Tuple
 ####################################################
 
 # Function generating the trivial words
+# TODO: consider moving into the DataGenerator object..
 def wordElongater(generators, relators, minWordLength, maxWordLength, mode="coxeter") -> List[int]:
   """
   goal: generate a trivial word of length N by making it longer using subroutineB then removing 'aa' relations to make it less visibly reducible
@@ -392,9 +393,9 @@ def createFileReturnPath(fileName, fileExtension=".txt", timestamp=None):
 
 # both raw datasets are timestamped and saved in the DATA_FOLDER directory
 
-def padWord(word_as_list, fixedWordLength):
-  fill = [0] * (fixedWordLength - len(word_as_list))
-  return word_as_list + fill
+def padWord(word_as_tuple:tuple, fixedWordLength):
+  fill = [0] * (fixedWordLength - len(word_as_tuple))
+  return list(word_as_tuple) + fill
 
 ## Read dataset from file into memory 
 def readDataset(filepath:str):
@@ -540,13 +541,20 @@ class DataGenerator:
     file_path = os.path.join(s.datasetPath, s.trivialFile)
     fileObj = open(file_path, mode="w")
     
-    #get desiredWordLength value in between: minWordLen,maxWordLen, fixedWordLen
-    for i in range(s.fileSize):
-      word_as_list = wordElongater(s.generators, s.relators, s.min_wordLength, s.max_wordLength, mode=s.mode)
-      # padding to word done here. 
-      word_as_list = padWord(word_as_list, s.fixed_wordLength)
-      fileObj.write(" ".join(str(item) for item in word_as_list) + "\n")
-
+    # get desiredWordLength value in between: minWordLen,maxWordLen, fixedWordLen
+    
+    # first save as a set (of unique elements)
+    # TODO: explore other fixes for creating more unique trivialWords (for example, re-examine how subroutine b's possible solutions could all be maximally used)
+    trivialWords = set()
+    while len(trivialWords) != s.fileSize:
+      word_as_tuple = wordElongater(s.generators, s.relators, s.min_wordLength, s.max_wordLength, mode=s.mode)
+      trivialWords.add(tuple(word_as_tuple))
+    
+    # then write to file 
+    for word in trivialWords:
+      paddedWord = padWord(word, s.fixed_wordLength)
+      fileObj.write(" ".join(str(item) for item in paddedWord) + "\n")
+    fileObj.close()
     return file_path 
 
   def writeRawNontrivialDataset(s, trivialDataset):
@@ -558,8 +566,14 @@ class DataGenerator:
     returns the file path of the nontrivial words written to a file
     note: mode is implied based on the generators given 
     """
-    nontrivialDataset = []
     # create matching likely non trivial word based on length of each trivial word it reads in a loop 
+    #i = 0
+    #nontrivialDataset = {}
+    #while i < len(trivialDataset):
+    #  trivialWord = trivialDataset[i]
+    #  nontrivialWord = []   #build this up
+
+    nontrivialDataset = []
     for trivialWord in trivialDataset:     
       nontrivialWord = []
       
@@ -660,16 +674,33 @@ class DataGenerator:
     
     return trainDF, testDF
     
+def debug():
+  # get timestamp (for job)
+  timestamp = getTimestamp()  #format: YYYY-MM-DD
+  coxeterMatrix = np.array([
+      [1, 3, 2],
+      [3, 1, 3],
+      [2, 3, 1],
+  ])
+  # create object for generating data 
+  dg = DataGenerator(coxeterMatrix, mode="coxeter", dataDir="datasets", timestamp=timestamp)
+  # define group type (mode)
+  dg.mode = 'coxeter'
+  dg.timestamp = timestamp
 
-#coxeterMatrix = np.array([
-#    [1, 3, 2, 2],
-#    [3, 1, 3, 2],
-#    [2, 3, 1, 3],
-#    [2, 2, 3, 1]
-#])
-#min_wordLen = 10
-#fixed_wordSize = min_wordLen + 6   #words all of size 50
-#timestamp = getTimestamp()
-#print(f"Timestamp: {timestamp}")
-#trainDF, testDF = makeMeMyData(coxeterMatrix, 20000, min_wordLen, fixed_wordSize, timestamp, test_size="0.3", mode='coxeter')
-## will generate words between 20-25, with a minimum actual word of 20, 
+  # define word length, dataset size, splits 
+  min_wordLen = 16
+  max_wordLen =  16
+  fixed_wordLen = max_wordLen
+  dg.datasetSize = 15000
+  dg.train_size = 0.3
+  dg.setSizes(min_wordLen, max_wordLen, fixed_wordLen)
+
+  # generate folder name for dataset using dataset features (updates folderPath)
+  folderName = dg.generateFolderName()
+  print(f"Unique folder name for dataset: {folderName}")
+  # define directory path (defined via generation or manually)
+  trainDF, testDF = dg.makeDataset(userDatasetPath=folderName, random_state=1)
+
+if __name__ == "__main__":
+  debug()
