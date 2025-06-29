@@ -405,7 +405,13 @@ def readDataset(filepath:str):
       raw_list = line.split(" ")   #note: last gen has \n char as well
       gen_list = list(map(int, raw_list))
       lenWord = len(gen_list)
-      words.append(gen_list)
+      # remove padding 
+      try: 
+        lenWord = gen_list.index(0)
+      except ValueError:
+        lenWord = len(gen_list)
+      words.append(gen_list[:lenWord])
+      #words.append(gen_list)
   return words
 
 def getWordLengthFrequencies(dataset) -> List[Tuple[int,int]]:
@@ -419,11 +425,26 @@ def getWordLengthFrequencies(dataset) -> List[Tuple[int,int]]:
   return frequencies
 
 # Create a plot for the frequencies dictionary
-def plotFrequencies(dataset):
-  #turn dataset into list of lengths
-  wordLengths = [len(word) for word in dataset]
+import plotly.express as px
+def plotFrequencies(datasetList, wordType=""):
+    # Turn dataset into list of word lengths
+    wordLengths = [len(word) for word in datasetList]
+    
+    # Create interactive histogram
+    fig = px.histogram(
+        x=wordLengths,
+        nbins=20,  # adjust as needed
+        labels={'x': 'Word Length'},
+        title=f'Distribution of {wordType} Word Lengths'
+    )
+    
+    fig.update_layout(
+        xaxis_title='Word Length',
+        yaxis_title='Frequency',
+        bargap=0.1
+    )
 
-  plt.hist(wordLengths)
+    fig.show()
 
 
 ################################################################################
