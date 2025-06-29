@@ -369,6 +369,7 @@ if not os.path.exists(DATA_FOLDER):
     os.makedirs(DATA_FOLDER)
 
 def getTimestamp():
+  """format: YYYY-MM-DD"""
   return datetime.now().strftime("%Y-%m-%d")
 
 from datetime import datetime
@@ -589,6 +590,228 @@ def loadDataset(datasetName:str):
 
     return df
 
+
+class DataGenerator:
+  def __init__(self, coxeterMatrix=None, mode=None, dataDir="generated_datasets", timestamp=None, min_wordLength=None, max_wordLength=None, fixed_wordLength=None, datasetSize=None, train_size=None):
+    # what path can you expect all datasets to be in 
+    self.dataDir = dataDir      # parent folder containing all datasets (all subfolders)
+    self.datasetPath = None     # defined after all params have been set
+    # timestamp 
+    self.timestamp = timestamp
+    
+    self.coxeterMatrix = coxeterMatrix
+    # only give the class your matrix, later functions feed it more parameters
+    self.mode = mode
+    # set word sizes 
+    self.setSizes(min_wordLength, max_wordLength, fixed_wordLength)
+    # set dataset size 
+    self.datasetSize = datasetSize
+    self.fileSize = None   # let it be initialized in makeDataset function, half of s.datasetSize
+    # split 
+    self.train_size = train_size
+    
+    # other uninitialized variables (mode specific)
+    self.generators = None 
+    self.relators = None
+    self.createWord_routine = None
+    self.reduceVisible_routine = None 
+    
+    # "constant" variables (conventional file names)
+    self.trivialFile = "trivialWords.txt" 
+    self.nonTrivialFile = "nontrivialWords.txt" 
+    self.trainFile = "train.csv" 
+    self.testfile = "test.csv"
+    
+       
+  def setSizes(self, min_wordLength, max_wordLength, fixed_wordLength):
+    self.min_wordLength =  min_wordLength
+    self.max_wordLength = max_wordLength
+    self.fixed_wordLength = fixed_wordLength
+  
+  def generateFolderName(s):
+    """MUST RUN in order to get dynamically generated folder with description of dataset"""
+    generationRunName = f"mode '{s.mode}' | range {s.min_wordLength} - {s.max_wordLength} | pad {s.fixed_wordLength} | size {s.datasetSize:,} | split {int(s.train_size * 100)} {int((1-s.train_size) * 100)}"
+    # get list of folders with this exact name         
+    matches = s._matches(generationRunName)
+    count = len(matches) # just len since 1st folder has index 0
+    s.folderName = f"{count} | {generationRunName}"
+           
+    # finally set datasetPath for this specific task 
+    s.datasetPath = os.path.join(s.dataDir, s.folderName)
+    
+    return s.folderName
+  
+    
+  
+  # helper functions:  
+  def _matches(s, runName):
+    folders = [name for name in os.listdir(s.dataDir)
+            if os.path.isdir(os.path.join(s.dataDir, name))]
+    folderTypes = [folder[4:] for folder in folders]
+ 
+    matches = []
+    for i, folderType in enumerate(folderTypes):
+      if runName == folderType: 
+        matches.append(folders[i])
+             
+    return matches
+
+  def initializeModeVariables(s):
+    """
+    Initializes
+    generators, relators
+    createWord_routine, reduceVisible_routine
+    """
+    # assumes coxeterMatrix and mode are both defined 
+    if s.mode == "coxeter":
+      s.generators = cox_gen(s.coxeterMatrix)
+      s.relators = cox_rel(s.coxeterMatrix)
+      s.createWord_routine = subroutine_b_cox
+      s.reduceVisible_routine = reduce_coxeter_word
+    elif s.mode == "artin":
+      s.generators = artin_gen(s.coxeterMatrix)
+      s.relators = artin_rel(s.coxeterMatrix)
+      s.createWord_routine = subroutine_b_artin
+      s.reduceVisible_routine = reduce_coxeter_word
+
+  def writeRawTrivialDataset(s):
+    """ 
+    writes trivial dataset based on parameters provided 
+    generators: list of generators based on matrix 
+    relators: list of relators based on matrix
+    datasetSize: number of trivial words to generate (for this particular dataset)
+    desiredWordLength: minimum length of each word to shoot for
+    fixedWordLength: fixed word length that all words will have, usually desired word length + some extra amount 
+    returns file path contianing list of trivial words of WordLength (includes padding )
+    """
+    # create and open file 
+    if s.timestamp == None:  
+      s.timestamp = getTimestamp()
+    
+    #file_path = createFileReturnPath(s.trivialFile, fileExtension='.txt', timestamp=timestamp)
+    file_path = os.path.join(s.datasetPath, s.trivialFile)
+    fileObj = open(file_path, mode="w")
+    
+    #get desiredWordLength value in between: minWordLen,maxWordLen, fixedWordLen
+    for i in range(s.fileSize):
+      word_as_list = wordElongater(s.generators, s.relators, s.min_wordLength, s.max_wordLength, mode=s.mode)
+      # padding to word done here. 
+      word_as_list = padWord(word_as_list, s.fixed_wordLength)
+      fileObj.write(" ".join(str(item) for item in word_as_list) + "\n")
+
+    return file_path 
+
+  def writeRawNontrivialDataset(s, trivialDataset):
+    """
+    trivialDataset: list of trivial words (each word is a list of generators) 
+    generators: list of generators based on matrix 
+    fixedWordLength: fixed word length where padded with 0's are done at the end
+    
+    returns the file path of the nontrivial words written to a file
+    note: mode is implied based on the generators given 
+    """
+    nontrivialDataset = []
+    # create matching likely non trivial word based on length of each trivial word it reads in a loop 
+    for trivialWord in trivialDataset:     
+      nontrivialWord = []
+      
+      #get ACTUAL length of the trivial word (find len before a 0 is found)
+      try: 
+        lenTrivialWord = trivialWord.index(0)
+      except ValueError:
+        lenTrivialWord = len(trivialWord)
+        
+      prevWord = 0
+      randomGen = s.generators[random.randint(0, len(s.generators)-1)]
+      for i in range(lenTrivialWord):
+        while prevWord == randomGen: 
+          randomGen = s.generators[random.randint(0, len(s.generators)-1)]
+        #add some different generator that doesn't match the last one
+        nontrivialWord.append(randomGen)
+        prevWord = randomGen
+        
+      #add nonTrivial word to list within this loop    
+      nontrivialDataset.append(nontrivialWord)
+
+    # create fileObj with a timestamp 
+    file_path = os.path.join(s.datasetPath, s.nonTrivialFile)
+    fileObj = open(file_path, mode="w")
+
+    # add the words to the nonTrivialWords.txt file
+    for word_as_list in nontrivialDataset:
+      word_as_list = padWord(word_as_list, s.fixed_wordLength)
+      fileObj.write(" ".join(str(item) for item in word_as_list) + "\n")
+    return file_path  
+
+  def createTrainTestSplitData(s, rawTrivialPath, rawNontrivialPath, random_state=42):
+      """
+      helper function called by 'makeData()' that returns the dataframes according to parameters you give it 
+      returns (trainDF, testDF) 
+      """
+      # Step 1: Read the raw data 
+      def loadRaw(filename, label):
+          with open(filename, 'r') as file:
+              lines = file.readlines()
+          # Each line is a list of tokens separated by spaces
+          return pd.DataFrame({
+              'tokens': [line.strip().split() for line in lines],
+              'label': label
+          })
+
+      # Load data from both classes
+      raw_tDF = loadRaw(rawTrivialPath, '0') #raw trivial dataframe
+      raw_ntDF = loadRaw(rawNontrivialPath, '1') #raw non-trivial dataframe
+
+      # combines both raw datasets into a single pandas dataframe
+      raw_df = pd.concat([raw_tDF, raw_ntDF]).sample(frac=1, random_state=random_state).reset_index(drop=True)
+
+      # creating 2 separate training and testing dataframes (modify test_size param)
+      train_size = s.train_size
+      test_size = 1 - s.train_size
+      train_df, test_df = train_test_split(raw_df, test_size=test_size, train_size=train_size, random_state=42, stratify=raw_df['label'])
+
+      # Optional: print out details of both dataframes
+      print("Training set size:", len(train_df))
+      print("Testing set size:", len(test_df))
+
+      # Save to CSV and return as well
+      train_path = os.path.join(s.datasetPath, s.trainFile)
+      test_path = os.path.join(s.datasetPath, s.testfile)
+      train_df.to_csv(train_path, index=False)
+      test_df.to_csv(test_path, index=False)
+      
+      return (train_df, test_df)
+
+  def makeDataset(s, userDatasetPath=None, random_state=1):
+    """returns (trainDF, testDF)"""
+    if s.timestamp == None:
+      s.timestamp = getTimestamp()
+
+    # get generators and relators updated, also subroutine functions set by mode
+    s.initializeModeVariables()
+    s.fileSize = s.datasetSize//2
+    
+    # generate files 
+    if userDatasetPath != None: 
+        s.datasetPath = os.path.join(s.dataDir, userDatasetPath)
+
+    #TODO add check based on how many files are in the subfolders (if not 4 than clean and delete the invalid folders)
+    # create path folder
+    os.makedirs(s.datasetPath, exist_ok=True)
+    
+    # TODO write empty file that just has the date (could contain details about the dataset inside)
+    
+    # write raw trivial dataset 
+    rawTrivialPath = s.writeRawTrivialDataset()
+    trivialDataset = readDataset(rawTrivialPath)    #TODO can be more efficient
+    # write raw non trivial dataset 
+    rawNontrivialPath = s.writeRawNontrivialDataset(trivialDataset)
+    
+    # create split 
+    trainDF, testDF = s.createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, random_state=random_state)
+    
+    return trainDF, testDF
+    
 
 #coxeterMatrix = np.array([
 #    [1, 3, 2, 2],
