@@ -90,6 +90,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
 num_epochs = 1000
 
 train_losses, val_losses, test_losses = [],[],[]
+train_accs, val_accs, test_accs = [],[],[]
 
 start = time.time()  #timer start
 
