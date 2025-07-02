@@ -204,7 +204,7 @@ def subroutine_b_cox(t, set_of_generators, set_of_relators, maxWordLen):
   ## Get list of ALL relators 
 
   all_relators = []
-  validlySized_relators = [rel for rel in set_of_relators if rel[0] != rel[1]]
+  validlySized_relators = [rel for rel in set_of_relators if len(rel) != 2]
   for rel in validlySized_relators:
     rel_inv = coxeter_inverse(rel)
     all_relators.extend([rel, rel_inv])
@@ -230,8 +230,8 @@ def subroutine_b_cox(t, set_of_generators, set_of_relators, maxWordLen):
 
   # TODO LOGIC DIFFERS (2): this collision check is not done for len(w) = 0
   # make sure word w does not create visually reducable words
-  if (a is not None and a == w[0]) or (b is not None and w_inv[-1] == b):
-    return subroutine_b_cox(t, set_of_generators, set_of_relators, maxWordLen)
+  #if (a is not None and a == w[0]) or (b is not None and w_inv[-1] == b):
+  #  return subroutine_b_cox(t, set_of_generators, set_of_relators, maxWordLen)
 
 
 
@@ -241,8 +241,9 @@ def subroutine_b_cox(t, set_of_generators, set_of_relators, maxWordLen):
   for rel in validlySized_relators:
       rel_inv = coxeter_inverse(rel)
       for rel_tuple in [rel, rel_inv]:
-          if w[-1] != rel_tuple[0] and rel_tuple[-1] != w_inv[0]:
-              candidates.append(rel_tuple)
+          # TODO LOGIC DIFFERS (2): removing check 
+          #if w[-1] != rel_tuple[0] and rel_tuple[-1] != w_inv[0]:
+          candidates.append(rel_tuple)
 
   # rerun if no viable relator
   if len(candidates) == 0:
@@ -271,7 +272,7 @@ def subroutine_b_artin(t, set_of_generators, set_of_relators, maxWordLen):
     ## Get list of ALL relators 
     
     all_relators = []
-    validlySized_relators = [rel for rel in set_of_relators if rel[0] != rel[1]] # TODO replace with len(rel) != 2
+    validlySized_relators = [rel for rel in set_of_relators if len(rel) != 2] # TODO replace with len(rel) != 2 (NOTE remove this todo, change done)
     for rel in validlySized_relators:
       inv_rel = artin_inverse(rel)         # specific to artin group 
       all_relators.extend([rel, inv_rel])
@@ -295,9 +296,9 @@ def subroutine_b_artin(t, set_of_generators, set_of_relators, maxWordLen):
     # calculate w inverse
     w_inv = artin_inverse(w)
 
-    # Early check: avoid reduction at boundaries with t
-    if (a is not None and w and a == -w[0]) or (b is not None and w_inv and w_inv[-1] == -b):
-        return subroutine_b_artin(t, set_of_generators, set_of_relators, maxWordLen)
+    # TODO LOGIC DIFFERS (1): Early check: avoid reduction at boundaries with t
+    #if (a is not None and w and a == -w[0]) or (b is not None and w_inv and w_inv[-1] == -b):
+    #    return subroutine_b_artin(t, set_of_generators, set_of_relators, maxWordLen)
 
 
     ####### Choose a non-reducing relator     TODO LOGIC DIFFERS (1): from len(w) == 0 case, makes sure relator picked 
@@ -307,13 +308,14 @@ def subroutine_b_artin(t, set_of_generators, set_of_relators, maxWordLen):
         if len(rel) == 2 and rel[0] == -rel[1]:
             continue
         for rel_tuple in [list(rel), [-g for g in reversed(rel)]]:
-            if w and rel_tuple and w[-1] == -rel_tuple[0]:
-                continue  # would cancel with end of w
-            if rel_tuple and w_inv and rel_tuple[-1] == -w_inv[0]:
-                continue  # would cancel with start of w_inv
-            rel_reduced = reduce_artin_word(rel_tuple)
-            if not rel_reduced:
-              continue
+            # TODO debug make sure commenting these out works
+            #if w and rel_tuple and w[-1] == -rel_tuple[0]:
+            #    continue  # would cancel with end of w
+            #if rel_tuple and w_inv and rel_tuple[-1] == -w_inv[0]:
+            #    continue  # would cancel with start of w_inv
+            #rel_reduced = reduce_artin_word(rel_tuple)
+            #if not rel_reduced:
+            #  continue
             valid_relators.append(rel_tuple)
 
     if not valid_relators:
@@ -604,7 +606,7 @@ class DataGenerator:
     oldSize = len(trivialWordsSet)
     while len(trivialWordsSet) != s.fileSize:
       if time.time() - startTime > maxTime:
-        logger.info(f"Word size {current_wordLength:<3}done | Time alloted {maxTime:<3.2f}| Words Generated {len(trivialWordsSet) - oldSize}")
+        logger.info(f"Word size {current_wordLength:<3}done | Time alloted {maxTime:<6.4f}| Words Generated {len(trivialWordsSet) - oldSize}")
         return
       
       # NOTE: fixing word length, ignoring class min and max (incremented outside of function)
@@ -618,7 +620,7 @@ class DataGenerator:
         pass
     
     # log last sized amount of words collected
-    logger.info(f"Word size {current_wordLength:<3}done | Time alloted {time.time()- startTime:<3.2f}| Words Generated {len(trivialWordsSet) - oldSize}")
+    logger.info(f"Word size {current_wordLength:<3}done | Time alloted {time.time()- startTime:}| Words Generated {len(trivialWordsSet) - oldSize}")
 
 
   def writeRawTrivialDataset(s):
@@ -653,7 +655,8 @@ class DataGenerator:
     # TODO double check this new implementation (incrementing currentWord len by 2 starting from 6 (or min), )
     
     # Bruteforce getting a complete dataset for a fixed word length size starting from the minimum and going up by two until the maximum is reached
-    for currSize in range(s.min_wordLength, s.max_wordLength, 2):
+    for currSize in range(s.min_wordLength, s.max_wordLength + 2, 2):
+      maxTime = currSize * 5
       startTime = time.time()
       s.writeRawTrivial_Partial(currSize, startTime, maxTime, trivialWords)
             
