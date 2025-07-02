@@ -11,8 +11,9 @@ import matplotlib.pyplot as plt
 #import torch
 
 from operator import neg  #for negating integers
-
-
+import time
+import logging
+logger = logging.getLogger(__name__)
 
 ########################################################
 ## Base functions for getting generators and relators ##
@@ -174,17 +175,23 @@ def reduce_artin_word(w):
 
 ### Subroutine B: creates a coxeter word using conjugates of the generators 
 from re import sub
+# helper functions for subroutine b (coxeter and artin)
+def coxeter_inverse(w):
+  return w[::-1]
+def artin_inverse(w):
+  return [-g for g in reversed(w)]
 
 # Note: If there are only 2 or less generators present in the finite relators of a Coxeter Group the following function won't work
 ##### If there are 2 generators present in the finite relators, the only valid trivial word is alternating between the generators (ie s1s2s1s2s1s2 repeating or s2s1s2s1s2s1 repeating)
 ##### If there is only 1 generator present in the finite relators, abandon the activity as it is impossible to generate visually unreducable trivial words
 
-def subroutine_b_cox(t, set_of_generators, set_of_relators):
+# TODO: move this function into class, adding extra parameters into this and coxeter for now
+def subroutine_b_cox(t, set_of_generators, set_of_relators, maxWordLen):
   t = reduce_coxeter_word(t)
   size_of_trivial = len(t)
   insertion_point = random.randint(0, size_of_trivial)
 
-  #letters between insertion point
+  #letters between insertion point (T = ttttt a (conjugate) b tttt)
   a = None
   b = None
   if size_of_trivial > 0:
@@ -193,49 +200,64 @@ def subroutine_b_cox(t, set_of_generators, set_of_relators):
     if insertion_point < size_of_trivial:
         b = t[insertion_point]
 
-  ####### randomly generate word w
-  w_length = random.randint(1,10)
-  w = []
+
+  ## Get list of ALL relators 
+
+  all_relators = []
+  validlySized_relators = [rel for rel in set_of_relators if rel[0] != rel[1]]
+  for rel in validlySized_relators:
+    rel_inv = coxeter_inverse(rel)
+    all_relators.extend([rel, rel_inv])
+
+  ## Generate W (generated semi randomly)
+  
+  w = []  
+  w_max_length = (maxWordLen - max([len(x) for x in set_of_relators]))  // 2        # max word len - max relator length // 2
+  w_length = random.randint(0,w_max_length)     # TODO debug, make sure this works
   for i in range(w_length):
-    w.append(random.choice(set_of_generators))
+    w.append(random.choice(set_of_generators))    # TODO make function that definitely generates a non-obviously trivial word
 
   # reduce w using subroutine A
   w = reduce_coxeter_word(w)
 
+  # IF W has length of 0, insert a random relator into t (which could be empty)   # TODO LOGIC DIFFERS (2): no collision check with insertion into t
   if len(w) == 0:
-    return subroutine_b_cox(t, set_of_generators, set_of_relators)
+    t[insertion_point:insertion_point] = random.choice(all_relators)
+    return t
 
   # calculate w inverse(note its for coxeter group)
-  w_inv = w[::-1]
+  w_inv = coxeter_inverse(w)
 
+  # TODO LOGIC DIFFERS (2): this collision check is not done for len(w) = 0
   # make sure word w does not create visually reducable words
   if (a is not None and a == w[0]) or (b is not None and w_inv[-1] == b):
-    return subroutine_b_cox(t, set_of_generators, set_of_relators)
+    return subroutine_b_cox(t, set_of_generators, set_of_relators, maxWordLen)
 
 
 
-####### pick a relator that is not visually reducable
-####### Choose a relator that avoids obvious cancellation with w and w_inv
-  non_squares = [rel for rel in set_of_relators if rel[0] != rel[1]]
+  ####### pick a relator that is not visually reducable given w
+  ####### Choose a relator that avoids obvious cancellation with w and w_inv
   candidates = []
-
-  for rel in non_squares:
-      for rel_tuple in [rel, rel[::-1]]:
+  for rel in validlySized_relators:
+      rel_inv = coxeter_inverse(rel)
+      for rel_tuple in [rel, rel_inv]:
           if w[-1] != rel_tuple[0] and rel_tuple[-1] != w_inv[0]:
               candidates.append(rel_tuple)
 
-  if not candidates:
-      return subroutine_b_cox(t, set_of_generators, set_of_relators)
+  # rerun if no viable relator
+  if len(candidates) == 0:
+      return subroutine_b_cox(t, set_of_generators, set_of_relators, maxWordLen)
 
+  # select a relator to use for trivial conjugate 
   r = random.choice(candidates)
 
-  ####### Insert conjugate: w + r + w_inv
+  ## Insert conjugate: w + r + w_inv
   conjugate = w + list(r) + w_inv
   t[insertion_point:insertion_point] = conjugate
   return t
 
 # Note: good to run unless only 1 generator. Then, abandon.
-def subroutine_b_artin(t, set_of_generators, set_of_relators):
+def subroutine_b_artin(t, set_of_generators, set_of_relators, maxWordLen):
     t = reduce_artin_word(t)
     size_of_trivial = len(t)
     insertion_point = random.randint(0, size_of_trivial)
@@ -246,21 +268,39 @@ def subroutine_b_artin(t, set_of_generators, set_of_relators):
     if len(t) > 0:
       b = t[insertion_point] if insertion_point < size_of_trivial else None
 
-    ####### Generate random reduced word w
-    w_length = random.randint(1, 10)
-    w = [random.choice(set_of_generators) for _ in range(w_length)]
-    w = reduce_artin_word(w)
-    if not w:
-        return subroutine_b_artin(t, set_of_generators, set_of_relators)
+    ## Get list of ALL relators 
+    
+    all_relators = []
+    validlySized_relators = [rel for rel in set_of_relators if rel[0] != rel[1]] # TODO replace with len(rel) != 2
+    for rel in validlySized_relators:
+      inv_rel = artin_inverse(rel)         # specific to artin group 
+      all_relators.extend([rel, inv_rel])
 
-    w_inv = [-g for g in reversed(w)]
+    ## Generate W (generated semi randomely)
+    
+    # max w len = max word len - max relator length // 2  
+    w_max_length = (maxWordLen - max([len(x) for x in set_of_relators]))  // 2
+    w_length = random.randint(0,w_max_length)     # TODO debug, make sure this works (seems to work)
+    w = []
+    for i in range(w_length):
+      w.append(random.choice(set_of_generators))    # TODO IMPORTANT make function that definitely generates a non-obviously trivial word w? (NOTE would prevent accidental w length of 0)
+
+    # reduce w using subroutine A
+    w = reduce_artin_word(w)    
+    # TODO LOGIC DIFFERS (1): add boundary check on realtor (like code for standard non zero w length case below)?
+    if len(w) == 0:
+      t[insertion_point:insertion_point] = random.choice(all_relators)
+      return t
+
+    # calculate w inverse
+    w_inv = artin_inverse(w)
 
     # Early check: avoid reduction at boundaries with t
     if (a is not None and w and a == -w[0]) or (b is not None and w_inv and w_inv[-1] == -b):
-        return subroutine_b_artin(t, set_of_generators, set_of_relators)
+        return subroutine_b_artin(t, set_of_generators, set_of_relators, maxWordLen)
 
 
-    ####### Choose a non-reducing relator
+    ####### Choose a non-reducing relator     TODO LOGIC DIFFERS (1): from len(w) == 0 case, makes sure relator picked 
     valid_relators = []
     for rel in set_of_relators:
         # Skip trivial relators like (g, -g)
@@ -277,7 +317,7 @@ def subroutine_b_artin(t, set_of_generators, set_of_relators):
             valid_relators.append(rel_tuple)
 
     if not valid_relators:
-        return subroutine_b_artin(t, set_of_generators, set_of_relators)
+        return subroutine_b_artin(t, set_of_generators, set_of_relators, maxWordLen)
 
     r = random.choice(valid_relators)
 
@@ -294,11 +334,12 @@ from typing import List, Tuple
 ### Generate a trvial word using both subroutines ##
 ####################################################
 
+
 # Function generating the trivial words
 # TODO: consider moving into the DataGenerator object..
 def wordElongater(generators, relators, minWordLength, maxWordLength, mode="coxeter") -> List[int]:
   """
-  goal: generate a trivial word of length N by making it longer using subroutineB then removing 'aa' relations to make it less visibly reducible
+  goal: generate a trivial word of between a min and max by making it longer using subroutineB then removing 'aa' relations to make it less visibly reducible
   """
   word_creation_routine = None    #subroutine_b
   reduce_visible_routine = None   #subroutine_a
@@ -310,9 +351,8 @@ def wordElongater(generators, relators, minWordLength, maxWordLength, mode="coxe
     word_creation_routine = subroutine_b_artin
     reduce_visible_routine = reduce_artin_word
 
-  #initialize the empty word
-  tWord = []
-
+  # TODO move this edgecase check, before doing word elongater, to not have to rerun it several times
+  # Before proceeding to using the subroutines:
   # Check edge case where subroutine B wouldn't work (only 1 valid relator that only ever uses 2 generators)
   # get at least 2 relators with at least 2 generators 
   uniqueRels = []
@@ -337,26 +377,26 @@ def wordElongater(generators, relators, minWordLength, maxWordLength, mode="coxe
     if len(generators) == 1:
       raise ValueError("Not enough generators to elongate the word.")
 
-  ## Subroutine B: Elongating the word
-  #run until desired size is reached (tWord will be of length: >= N)
-  tWord = word_creation_routine(tWord, generators, relators)  #1st pass
+  ## Subroutine B: Elongating the word (w T w)
+  
+  #initialize the empty word
+  tWord = [] 
+  # 1st pass required
+  tWord = word_creation_routine(tWord, generators, relators, maxWordLength)
+  #keep elongating the word until it's at least as large as the minWordLength
   while( len(tWord) < minWordLength ):
-    tWord = word_creation_routine(tWord, generators, relators)
+    tWord = word_creation_routine(tWord, generators, relators, maxWordLength)
 
-  ## Subroutine A: removing the 'aa' visible trivial parts of a word
-  #tWord=subroutineA(tWord)
+  ## Subroutine A: removing the 'aa' visible trivial parts of a word post creating the word with subroutine B
   tWord = reduce_visible_routine(tWord)
 
-  #check that it's long enough, if it is then return tWord, if not then call again
+  #check that the generated word is within the desired range (if not then recall this function)
   if len(tWord) < minWordLength:
     tWord = wordElongater(generators, relators, minWordLength, maxWordLength, mode=mode)
-  #now at least of length 20
-  if len(tWord) > maxWordLength: #desiredWordLength derived from N+(some val)
+  #make sure word doesn't pass maxWordLength
+  if len(tWord) > maxWordLength:
     tWord = wordElongater(generators, relators, minWordLength, maxWordLength, mode=mode)
-  #now at least of length 35, cuts of really long words, uses fixedWordLength max to create in between desiredWordLength
   
-  # padding being done in file writing functions
-
   return tWord
 
 
@@ -397,21 +437,26 @@ def padWord(word_as_tuple:tuple, fixedWordLength):
   fill = [0] * (fixedWordLength - len(word_as_tuple))
   return list(word_as_tuple) + fill
 
-## Read dataset from file into memory 
+# Seperated into function since this is used in several places
+def getTrueWordLength(word):
+  """gets actual word length (ignores 0's used for padding)"""
+  try: 
+    lenWord = word.index(0)
+  except ValueError:
+    lenWord = len(word)
+  return lenWord
+
 def readDataset(filepath:str):
+  """Reads dataset from a file into memory (takes out padding)"""
   words = []
   with open(filepath) as fileObj:
     for line in fileObj:
       raw_list = line.split(" ")   #note: last gen has \n char as well
       gen_list = list(map(int, raw_list))
-      lenWord = len(gen_list)
-      # remove padding 
-      try: 
-        lenWord = gen_list.index(0)
-      except ValueError:
-        lenWord = len(gen_list)
-      words.append(gen_list[:lenWord])
-      #words.append(gen_list)
+      # get length of word without padding 
+      lenWord = getTrueWordLength(gen_list)
+      # appends the relevant part of the "list of generatrs" (excludes padding given true length)
+      words.append(gen_list[0:lenWord])
   return words
 
 def getWordLengthFrequencies(dataset) -> List[Tuple[int,int]]:
@@ -426,25 +471,25 @@ def getWordLengthFrequencies(dataset) -> List[Tuple[int,int]]:
 
 # Create a plot for the frequencies dictionary
 import plotly.express as px
-def plotFrequencies(datasetList, wordType=""):
-    # Turn dataset into list of word lengths
-    wordLengths = [len(word) for word in datasetList]
-    
-    # Create interactive histogram
-    fig = px.histogram(
-        x=wordLengths,
-        nbins=20,  # adjust as needed
-        labels={'x': 'Word Length'},
-        title=f'Distribution of {wordType} Word Lengths'
-    )
-    
-    fig.update_layout(
-        xaxis_title='Word Length',
-        yaxis_title='Frequency',
-        bargap=0.1
-    )
 
-    fig.show()
+def plotFrequencies(datasetList, wordType=""):
+  """takes in a list of words (represented as lists), note expects no padding using readDataset to achieve this"""
+  # Turn dataset into list of word lengths
+  wordLengths = [len(word) for word in datasetList]
+  
+  # Create interactive histogram
+  fig = px.histogram(
+      x=wordLengths,
+      nbins=max(wordLengths) - min(wordLengths) + 1,
+      labels={'x': 'Word Length'},
+      title=f'Distribution of {wordType} Word Lengths'
+  )
+  fig.update_layout(
+      xaxis_title='Word Length',
+      yaxis_title='Frequency',
+      bargap=0.1
+  )
+  fig.show()
 
 
 ################################################################################
@@ -463,8 +508,10 @@ def loadDataset(datasetName:str):
 
 
 class DataGenerator:
-  def __init__(self, coxeterMatrix=None, mode=None, dataDir="generated_datasets", timestamp=None, min_wordLength=None, max_wordLength=None, fixed_wordLength=None, datasetSize=None, train_size=None):
+  def __init__(self, coxeterMatrix=None, mode=None, dataDir="generated_datasets", timestamp=None, min_wordLength=None, max_wordLength=None, fixed_wordLength=None, datasetSize=None, train_size=None, groupName="", BR='¦'):
     # what path can you expect all datasets to be in 
+    self.groupName = groupName
+    self.BR = BR               # param spliting character
     self.dataDir = dataDir      # parent folder containing all datasets (all subfolders)
     self.datasetPath = None     # defined after all params have been set
     # timestamp 
@@ -501,11 +548,12 @@ class DataGenerator:
   
   def generateFolderName(s):
     """MUST RUN in order to get dynamically generated folder with description of dataset"""
-    generationRunName = f"mode '{s.mode}' | range {s.min_wordLength} - {s.max_wordLength} | pad {s.fixed_wordLength} | size {s.datasetSize:,} | split {int(s.train_size * 100)} {int((1-s.train_size) * 100)}"
+    BR = s.BR
+    generationRunName = f"{s.groupName} {BR} '{s.mode}' {BR} {s.min_wordLength}-{s.max_wordLength} {BR} pad {s.fixed_wordLength} {BR} size {s.datasetSize:,} {BR} split {int(s.train_size * 100)} {int((1-s.train_size) * 100)}"
     # get list of folders with this exact name         
     matches = s._matches(generationRunName)
     count = len(matches) # just len since 1st folder has index 0
-    s.folderName = f"{count} | {generationRunName}"
+    s.folderName = f"{count} {BR} {generationRunName}"
            
     # finally set datasetPath for this specific task 
     s.datasetPath = os.path.join(s.dataDir, s.folderName)
@@ -545,6 +593,34 @@ class DataGenerator:
       s.createWord_routine = subroutine_b_artin
       s.reduceVisible_routine = reduce_coxeter_word
 
+  # TODO option to union the batches of these unique trivial sets (unique by length), would have to unlink from reliance on while loop to stop by file size
+  # TODO make it so that max time is variable based on the current targeted word length (5 is a bit much for words 6,8,10, 12 but too little for 20+) 
+  def writeRawTrivial_Partial(s, current_wordLength, startTime, maxTime, trivialWordsSet):
+    """
+    function that generates all trivial words of length current_wordLength
+    trivialWordsSet : set of unique trivial words into this function and then updated
+    """
+    # loop until size of dataset has been reached (or the more likely timeout scenario)
+    oldSize = len(trivialWordsSet)
+    while len(trivialWordsSet) != s.fileSize:
+      if time.time() - startTime > maxTime:
+        logger.info(f"Word size {current_wordLength:<3}done | Time alloted {maxTime:<3.2f}| Words Generated {len(trivialWordsSet) - oldSize}")
+        return
+      
+      # NOTE: fixing word length, ignoring class min and max (incremented outside of function)
+      word_as_tuple = wordElongater(s.generators, s.relators, current_wordLength, current_wordLength, mode=s.mode)
+      
+      # attempt to add newly generated trivial word and verify that it has been added (is unique)
+      oldLen = len(trivialWordsSet)
+      trivialWordsSet.add(tuple(word_as_tuple))
+      if len(trivialWordsSet) > oldLen:
+        #logger.info(f"Number of Unique Trivial Words: {len(trivialWordsSet)}")   # DEBUG, too many prints for now TODO print every 100 unique words? or a progress bar?
+        pass
+    
+    # log last sized amount of words collected
+    logger.info(f"Word size {current_wordLength:<3}done | Time alloted {time.time()- startTime:<3.2f}| Words Generated {len(trivialWordsSet) - oldSize}")
+
+
   def writeRawTrivialDataset(s):
     """ 
     writes trivial dataset based on parameters provided 
@@ -555,27 +631,53 @@ class DataGenerator:
     fixedWordLength: fixed word length that all words will have, usually desired word length + some extra amount 
     returns file path contianing list of trivial words of WordLength (includes padding )
     """
-    # create and open file 
     if s.timestamp == None:  
       s.timestamp = getTimestamp()
     
+    # create and open file 
     file_path = os.path.join(s.datasetPath, s.trivialFile)
     fileObj = open(file_path, mode="w")
+
+    # get desiredWordLength value in between: minWordLen,maxWordLen, fixedWordLen    
     
-    # get desiredWordLength value in between: minWordLen,maxWordLen, fixedWordLen
+    # TODO: (NOTE outdated, remove todo) explore other fixes for creating more unique trivialWords (for example, re-examine how subroutine b's possible solutions could all be maximally used)
+    trivialWords = set()    # saving as unique set of trivial words
     
-    # first save as a set (of unique elements)
-    # TODO: explore other fixes for creating more unique trivialWords (for example, re-examine how subroutine b's possible solutions could all be maximally used)
-    trivialWords = set()
-    while len(trivialWords) != s.fileSize:
-      word_as_tuple = wordElongater(s.generators, s.relators, s.min_wordLength, s.max_wordLength, mode=s.mode)
-      trivialWords.add(tuple(word_as_tuple))
+    ## TODO make sure this works (adds )   (could modify subroutine b instead)  NOTE we're not doing this todo, went with alternative method again 
+    #if s.addRelators == True:
+    #  for relator in s.relators: 
+    #    trivialWords.add(relator)
+
+    # TODO increment time in relation to "currSize" variable, since word length's (and time to generate complete set of said words) grows 'exponentially'    
+    maxTime = 5   # 5 seconds
+    # TODO double check this new implementation (incrementing currentWord len by 2 starting from 6 (or min), )
     
-    # then write to file 
+    # Bruteforce getting a complete dataset for a fixed word length size starting from the minimum and going up by two until the maximum is reached
+    for currSize in range(s.min_wordLength, s.max_wordLength, 2):
+      startTime = time.time()
+      s.writeRawTrivial_Partial(currSize, startTime, maxTime, trivialWords)
+            
+    # TODO: delete this (moved this into it's own function called in the above for loop)
+#    while len(trivialWords) < s.fileSize:
+#      if time.time() - startTime > maxTime:
+#        # print("timeout")    #debug
+#        break
+#      g
+#      word_as_tuple = wordElongater(s.generators, s.relators, s.min_wordLength, s.max_wordLength, mode=s.mode)
+#      
+#      # old length
+#      oldLen = len(trivialWords)
+#      trivialWords.add(tuple(word_as_tuple))
+#      if len(trivialWords) > oldLen:
+#        print(f"New Length: {len(trivialWords)}")
+#      
+    
+    # write all unique words from the set into trivial text file
     for word in trivialWords:
       paddedWord = padWord(word, s.fixed_wordLength)
       fileObj.write(" ".join(str(item) for item in paddedWord) + "\n")
     fileObj.close()
+
     return file_path 
 
   def writeRawNontrivialDataset(s, trivialDataset):
@@ -694,34 +796,46 @@ class DataGenerator:
     trainDF, testDF = s.createTrainTestSplitData(rawTrivialPath, rawNontrivialPath, random_state=random_state)
     
     return trainDF, testDF
+  
+# import from notebook if logging is to be enabled
+def setup_logging(level=logging.INFO):
+    if not logger.hasHandlers():  # Prevent adding multiple handlers in Jupyter
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s', "%H:%M:%S")
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.setLevel(level)
     
 def debug():
+  BR = "."    # break character
   # get timestamp (for job)
   timestamp = getTimestamp()  #format: YYYY-MM-DD
+
   coxeterMatrix = np.array([
-      [1, 3, 2],
+      [1, 3, 3],
       [3, 1, 3],
-      [2, 3, 1],
+      [3, 3, 1],
   ])
-  # create object for generating data 
-  dg = DataGenerator(coxeterMatrix, mode="coxeter", dataDir="datasets", timestamp=timestamp)
-  # define group type (mode)
+  dg = DataGenerator(coxeterMatrix, dataDir="datasets", timestamp=timestamp, BR=BR)
+  dg.groupName = "A2_tilde"
   dg.mode = 'coxeter'
   dg.timestamp = timestamp
 
   # define word length, dataset size, splits 
-  min_wordLen = 16
-  max_wordLen =  16
+  min_wordLen = 6
+  max_wordLen =  22
   fixed_wordLen = max_wordLen
-  dg.datasetSize = 15000
+  dg.datasetSize = 6000 * 2
   dg.train_size = 0.3
   dg.setSizes(min_wordLen, max_wordLen, fixed_wordLen)
 
   # generate folder name for dataset using dataset features (updates folderPath)
   folderName = dg.generateFolderName()
-  print(f"Unique folder name for dataset: {folderName}")
+  print(f"Unique folder name for dataset:\n{folderName}")
   # define directory path (defined via generation or manually)
   trainDF, testDF = dg.makeDataset(userDatasetPath=folderName, random_state=1)
 
 if __name__ == "__main__":
-  debug()
+  setup_logging(level=logging.INFO)  
+  # enable logging if file is being run as main
+  debug()   # run as main
