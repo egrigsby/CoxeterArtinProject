@@ -793,8 +793,9 @@ class DataGenerator:
       # creating 2 separate training and testing dataframes (modify test_size param)
       train_size = s.train_size
       test_size = 1 - s.train_size
-      train_df, test_df = train_test_split(raw_df, test_size=test_size, train_size=train_size, random_state=42, stratify=raw_df['label'])
-
+      #test_size = 1. - s.train_size  # commented out b/c of floating point issues
+      train_df, test_df = train_test_split(raw_df, train_size=train_size, random_state=42, stratify=raw_df['label'])
+      
       # Optional: print out details of both dataframes
       print("Training set size:", len(train_df))
       print("Testing set size:", len(test_df))
