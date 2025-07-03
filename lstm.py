@@ -72,6 +72,7 @@ test_size = len(testing_sets) - val_size
 val_set, test_set = random_split(testing_sets, [val_size, test_size]) 
 val_loader = DataLoader(val_set, batch_size=64, shuffle=False)
 test_loader = DataLoader(test_set, batch_size=64, shuffle=False)
+#test_loader = DataLoader(testing_sets, batch_size=100000, shuffle=True)
 
 #model parameters
 vocab_size = train_set.vocab_size   #build vocab size on training data
@@ -91,6 +92,8 @@ num_epochs = 1000
 
 train_losses, val_losses, test_losses = [],[],[]
 train_accs, val_accs, test_accs = [],[],[]
+#train_losses, test_losses = [],[],[]
+#train_accs, test_accs = [],[],[]
 
 start = time.time()  #timer start
 
@@ -174,7 +177,11 @@ for epoch in range(num_epochs):
     test_losses.append(loss.item())
     test_accs.append(100 * test_correct / test_total)
 
-    print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}, Test Loss: {avg_val_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Validation Accuracy: {100 * val_correct / val_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%')
+   with open("C:/Users/xiongce/Downloads/test/out.txt", "a") as f: #write data to a file (specify path); manually clear out.txt after saving a copy (for now)
+      data = f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}, Test Loss: {avg_test_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Validation Accuracy: {100 * val_correct / val_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%'
+      #data = f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Test Loss: {avg_test_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%'
+      f.write(data + "\n")
+    print(data)
     end = time.time()  #timer end
 
 elapsed = end - start
