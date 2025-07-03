@@ -181,6 +181,27 @@ def coxeter_inverse(w):
 def artin_inverse(w):
   return [-g for g in reversed(w)]
 
+# obvious reducibility is different for coxeter and artin groups (NOTE only use for nontrivial word generation for now..) 
+def genNonObvTrivWord(length: int, generators, mode):
+    word = []
+    lastGen = 0
+    while len(word) < length:
+        newGen = random.choice(generators)
+        while True:
+            if mode == "coxeter":
+                condition = newGen == lastGen
+            elif mode == "artin":
+                condition = newGen == -lastGen
+            else:
+                condition = False
+
+            if not condition:
+                break
+            newGen = random.choice(generators)
+        word.append(newGen)
+        lastGen = newGen    # word[-1]
+    return word
+
 # Note: If there are only 2 or less generators present in the finite relators of a Coxeter Group the following function won't work
 ##### If there are 2 generators present in the finite relators, the only valid trivial word is alternating between the generators (ie s1s2s1s2s1s2 repeating or s2s1s2s1s2s1 repeating)
 ##### If there is only 1 generator present in the finite relators, abandon the activity as it is impossible to generate visually unreducable trivial words
@@ -214,8 +235,11 @@ def subroutine_b_cox(t, set_of_generators, set_of_relators, maxWordLen):
   w = []  
   w_max_length = (maxWordLen - max([len(x) for x in set_of_relators]))  // 2        # max word len - max relator length // 2
   w_length = random.randint(0,w_max_length)     # TODO debug, make sure this works
+  
   for i in range(w_length):
-    w.append(random.choice(set_of_generators))    # TODO make function that definitely generates a non-obviously trivial word
+    w.append(random.choice(set_of_generators))    # TODO (NOTE tried this and didn't work efficiently with strict bounds ex: 10-10 requires w collapsing randomely) OLD: make function that definitely generates a non-obviously trivial word
+  # NOTE: remove commented line below, slower than making a word that can reduce with subroutine A 
+  #w = genNonObvTrivWord(w_length, set_of_generators, "coxeter")
 
   # reduce w using subroutine A
   w = reduce_coxeter_word(w)
@@ -595,6 +619,13 @@ class DataGenerator:
       s.createWord_routine = subroutine_b_artin
       s.reduceVisible_routine = reduce_coxeter_word
 
+  # making a helper function for alloting time  (TODO temporary fix, specific to A2 Tilde dataset) NOTE: find method of modifying function based on properties of a group
+  def allotTime(s, word_size:int) -> float:
+    if word_size <= 14:
+      return 5.0
+    else:
+      return word_size * 5.0
+
   # TODO option to union the batches of these unique trivial sets (unique by length), would have to unlink from reliance on while loop to stop by file size
   # TODO make it so that max time is variable based on the current targeted word length (5 is a bit much for words 6,8,10, 12 but too little for 20+) 
   def writeRawTrivial_Partial(s, current_wordLength, startTime, maxTime, trivialWordsSet):
@@ -605,6 +636,7 @@ class DataGenerator:
     # loop until size of dataset has been reached (or the more likely timeout scenario)
     oldSize = len(trivialWordsSet)
     while len(trivialWordsSet) != s.fileSize:
+      # TODO (IMPORTANT): in addition to ending with a timeout, end if the length of new words added has been completed by checking a dictionary with the theoretical amount 
       if time.time() - startTime > maxTime:
         logger.info(f"Word size {current_wordLength:<3}done | Time alloted {maxTime:<6.4f}| Words Generated {len(trivialWordsSet) - oldSize}")
         return
@@ -651,12 +683,12 @@ class DataGenerator:
     #    trivialWords.add(relator)
 
     # TODO increment time in relation to "currSize" variable, since word length's (and time to generate complete set of said words) grows 'exponentially'    
-    maxTime = 5   # 5 seconds
+    #maxTime = 5   # 5 seconds
     # TODO double check this new implementation (incrementing currentWord len by 2 starting from 6 (or min), )
     
     # Bruteforce getting a complete dataset for a fixed word length size starting from the minimum and going up by two until the maximum is reached
     for currSize in range(s.min_wordLength, s.max_wordLength + 2, 2):
-      maxTime = currSize * 5
+      maxTime = s.allotTime(currSize)
       startTime = time.time()
       s.writeRawTrivial_Partial(currSize, startTime, maxTime, trivialWords)
             
@@ -709,14 +741,19 @@ class DataGenerator:
       except ValueError:
         lenTrivialWord = len(trivialWord)
         
-      prevWord = 0
-      randomGen = s.generators[random.randint(0, len(s.generators)-1)]
-      for i in range(lenTrivialWord):
-        while prevWord == randomGen: 
-          randomGen = s.generators[random.randint(0, len(s.generators)-1)]
-        #add some different generator that doesn't match the last one
-        nontrivialWord.append(randomGen)
-        prevWord = randomGen
+      # TODO deleted this commented out code, old method of generating "non trivial" words for coxeter groups only 
+      #prevWord = 0
+      #randomGen = s.generators[random.randint(0, len(s.generators)-1)]
+      #for i in range(lenTrivialWord):
+      #  while prevWord == randomGen: 
+      #    randomGen = s.generators[random.randint(0, len(s.generators)-1)]
+      #  #add some different generator that doesn't match the last one
+      #  nontrivialWord.append(randomGen)
+      #  prevWord = randomGen
+      
+      # use double while loop to generate a non obviously trivial word (according to mode)
+      nontrivialWord = genNonObvTrivWord(lenTrivialWord, s.generators, s.mode)
+
         
       #add nonTrivial word to list within this loop    
       nontrivialDataset.append(nontrivialWord)
@@ -824,11 +861,12 @@ def debug():
   dg.mode = 'coxeter'
   dg.timestamp = timestamp
 
+
   # define word length, dataset size, splits 
   min_wordLen = 6
   max_wordLen =  22
   fixed_wordLen = max_wordLen
-  dg.datasetSize = 6000 * 2
+  dg.datasetSize = 129300  #6000 * 2
   dg.train_size = 0.3
   dg.setSizes(min_wordLen, max_wordLen, fixed_wordLen)
 
