@@ -92,8 +92,8 @@ num_epochs = 1000
 
 train_losses, val_losses, test_losses = [],[],[]
 train_accs, val_accs, test_accs = [],[],[]
-#train_losses, test_losses = [],[],[]
-#train_accs, test_accs = [],[],[]
+#train_losses, test_losses = [],[]
+#train_accs, test_accs = [],[]
 
 start = time.time()  #timer start
 
@@ -224,3 +224,5 @@ plt.legend()
 plt.savefig('accuracy')
 print("Accuracy graph saved :)")
 plt.show()
+
+#srun --gres=gpu:1 --time=01:30:00 --pty bash   #failsafe for requesting gpus, time
