@@ -10,13 +10,12 @@ import ast
 import time  #for simple timer
 import matplotlib.pyplot as plt  #data visualization
 
-seed = 42   #convention
-torch.manual_seed(seed)
-np.random.seed(seed)
-random.seed(seed)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-
+# seed = 42   #convention
+# torch.manual_seed(seed)
+# np.random.seed(seed)
+# random.seed(seed)
+# torch.backends.cudnn.deterministic = True
+# torch.backends.cudnn.benchmark = False
 
 """Prep dataset"""
 
@@ -76,11 +75,11 @@ class TrivialWordLSTM(nn.Module):
       return out     #raw logits for cross entropy loss
 
 #training dataset
-train_set = WordDataset(data_dir='/content/otrain.csv') #need to upload files and check paths every time; if a syntax error is raised, make sure paths contain backslashes, NOT forward slashes
-train_loader = DataLoader(train_set, batch_size=30000, shuffle=True)
+train_set = WordDataset(data_dir='C:/Users/xiongce/CoxeterArtinProject/otrain.csv') #need to upload files and check paths every time; if a syntax error is raised, make sure paths contain backslashes, NOT forward slashes
+train_loader = DataLoader(train_set, batch_size=64, shuffle=True)
 
 #testing and validation datasets
-testing_sets = WordDataset(data_dir='/content/otest.csv')
+testing_sets = WordDataset(data_dir='C:/Users/xiongce/CoxeterArtinProject/otest.csv')
 
 # #split testing dataset into validation and test sets
 # val_size = int(len(testing_sets) * 0.2)   #20% for validation, 80% for testing
@@ -88,7 +87,7 @@ testing_sets = WordDataset(data_dir='/content/otest.csv')
 # val_set, test_set = random_split(testing_sets, [val_size, test_size]) 
 # val_loader = DataLoader(val_set, batch_size=64, shuffle=False)
 # test_loader = DataLoader(test_set, batch_size=64, shuffle=False)
-test_loader = DataLoader(testing_sets, batch_size=30000, shuffle=True)
+test_loader = DataLoader(testing_sets, batch_size=64, shuffle=True)
 
 #model parameters
 vocab_size = train_set.vocab_size   #build vocab size on training data
@@ -103,12 +102,6 @@ print(model)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0) 
 #optimizer = optim.AdamW(model.parameters(), lr=0.001)
-
-print("Example tokens:", train_set.data[0])
-print("Example labels:", train_set.labels[0])
-print("Max token value:", max([max(seq) for seq in train_set.data]))
-print("Max label value:", max([max(seq) for seq in train_set.labels]))
-print("Vocab size:", vocab_size)
 
 """Training loop"""
 
@@ -212,10 +205,10 @@ for epoch in range(num_epochs):
     test_losses.append(avg_test_loss)
     test_accs.append(100 * test_correct / test_total)
 
-    #with open("C:/Users/xiongce/Downloads/test/out.txt", "a") as f: #write data to a file (specify path); manually clear out.txt after saving a copy (for now)
+    with open("C:/Users/xiongce/Downloads/out.txt", "a") as f: #write data to a file (specify path); manually clear out.txt after saving a copy (for now)
     #data = f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}, Test Loss: {avg_test_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Validation Accuracy: {100 * val_correct / val_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%'
-    data = f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Test Loss: {avg_test_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%'
-      #f.write(data + "\n")
+      data = f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Test Loss: {avg_test_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%'
+      f.write(data + "\n")
     print(data)
     end = time.time()  #timer end
 
