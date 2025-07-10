@@ -9,6 +9,13 @@ import ast
 import time  #for simple timer
 import matplotlib.pyplot as plt  #data visualization
 
+seed = 42   #convention
+torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 """Prep dataset"""
 
 class WordDataset(Dataset):
@@ -177,7 +184,7 @@ for epoch in range(num_epochs):
     test_losses.append(loss.item())
     test_accs.append(100 * test_correct / test_total)
 
-   with open("C:/Users/xiongce/Downloads/test/out.txt", "a") as f: #write data to a file (specify path); manually clear out.txt after saving a copy (for now)
+    with open("C:/Users/xiongce/Downloads/test/out.txt", "a") as f: #write data to a file (specify path); manually clear out.txt after saving a copy (for now)
       data = f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}, Test Loss: {avg_test_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Validation Accuracy: {100 * val_correct / val_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%'
       #data = f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Test Loss: {avg_test_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%'
       f.write(data + "\n")
