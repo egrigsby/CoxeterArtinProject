@@ -3,6 +3,7 @@ import torch.nn as nn   #neural networks functions
 import torch.optim as optim   #optimizers
 from torch.utils.data import DataLoader, Dataset, random_split
 
+import random
 import numpy as np
 import pandas as pd
 import ast
