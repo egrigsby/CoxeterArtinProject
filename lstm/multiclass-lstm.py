@@ -214,6 +214,7 @@ for epoch in range(num_epochs):
     with open("/projects/expmmllab/LSTMcx/out.txt", "a") as f: 
       if validation == True:
         data = f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}, Test Loss: {avg_test_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Validation Accuracy: {100 * val_correct / val_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%'
+        f.write(data + "\n")
       else:
         data = f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Test Loss: {avg_test_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%'
         f.write(data + "\n")
@@ -228,10 +229,13 @@ print(f'Process completed in {elapsed:.4f} seconds.')
 """Graphing functions"""
 def log_graph():
   plt.figure(figsize=(10,5))
-  plt.title("Training, Validation, and Testing Loss")
-  plt.plot(train_losses,label="Training Loss")
   if validation == True:
+    plt.title("Training, Validation, and Testing Loss")
+    plt.plot(train_losses,label="Training Loss")
     plt.plot(val_losses,label="Validation Loss")
+  else:
+    plt.title("Training and Testing Loss")
+    plt.plot(train_losses,label="Training Loss")
   plt.plot(test_losses,label="Testing Loss")
   plt.xlabel("Epochs")
   plt.ylabel("Loss")
@@ -243,10 +247,13 @@ def log_graph():
 
 def lin_graph():
   plt.figure(figsize=(10,5))
-  plt.title("Training, Validation, and Testing Loss")
-  plt.plot(train_losses,label="Training Loss")
   if validation == True:
+    plt.title("Training, Validation, and Testing Loss")
+    plt.plot(train_losses,label="Training Loss")
     plt.plot(val_losses,label="Validation Loss")
+  else:
+    plt.title("Training and Testing Loss")
+    plt.plot(train_losses,label="Training Loss")
   plt.plot(test_losses,label="Testing Loss")
   plt.xlabel("Epochs")
   plt.ylabel("Loss")
@@ -257,10 +264,13 @@ def lin_graph():
 
 def acc_graph():
   plt.figure(figsize=(10,5))
-  plt.title("Training, Validation, and Testing Accuracy")
-  plt.plot(train_accs,label="Training Accuracy")
   if validation == True:
+    plt.title("Training, Validation, and Testing Accuracy")
+    plt.plot(train_accs,label="Training Accuracy")
     plt.plot(val_accs,label="Validation Accuracy")
+  else:
+    plt.title("Training and Testing Loss")
+    plt.plot(train_accs,label="Training Accuracy")
   plt.plot(test_accs,label="Testing Accuracy")
   plt.xlabel("Epochs")
   plt.ylabel("Accuracy (%)")
