@@ -90,6 +90,7 @@ test_loader = DataLoader(testing_sets, batch_size=64, shuffle=True)
 
 #validation toggle: True for on, False for off
 validation = True
+
 #split testing dataset into validation and test sets
 if validation == True:
   val_size = int(len(testing_sets) * 0.2)   #20% for validation, 80% for testing
@@ -124,7 +125,7 @@ else:
   train_losses, test_losses = [],[]
   train_accs, test_accs = [],[]
 
-start = time.time()  #timer start
+start = time.time() 
 
 for epoch in range(num_epochs):
     train_correct = 0
@@ -136,12 +137,6 @@ for epoch in range(num_epochs):
     for batch_item in train_loader:
         X_batch = batch_item[0]    #input token seq
         y_batch = batch_item[1]    #label seq
-        #outputs = model(X_batch)   #predicted probabilities
-        #print("outputs shape:", outputs.shape) #debugging
-        #print("outputs dtype:", outputs.dtype) #debugging
-
-        #print("y_batch shape:", y_batch.shape) #debugging
-        #print("y_batch dtype:", y_batch.dtype) #debugging
 
         outputs = model(X_batch)                    #(batch_size, seq_len, num_classes)
         outputs = outputs.view(-1, num_classes)     #flatten tokens
@@ -173,7 +168,6 @@ for epoch in range(num_epochs):
 
       for batch_item in val_loader:
           X_batch = batch_item[0]
-          #print(X_batch.shape) #debugging
           y_batch = batch_item[1]
           outputs = model(X_batch) 
           outputs = outputs.view(-1, num_classes)  
@@ -200,9 +194,9 @@ for epoch in range(num_epochs):
     for batch_item in test_loader:
       X_batch = batch_item[0]
       y_batch = batch_item[1]
-      outputs = model(X_batch)  # (batch_size, seq_len, num_classes)
-      outputs = outputs.view(-1, num_classes)  # flatten tokens
-      y_batch = y_batch.view(-1)  # flatten tokens
+      outputs = model(X_batch)  
+      outputs = outputs.view(-1, num_classes) 
+      y_batch = y_batch.view(-1) 
 
       loss = criterion(outputs, y_batch)
       testing_loss += loss.item()
@@ -275,7 +269,7 @@ def acc_graph():
   print("Accuracy graph saved :)")
   plt.show()
 
-def confusion_matrix(model, dataloader, num_classes):
+def plot_confusion_matrix(model, dataloader, num_classes):
     all_preds = []
     all_targets = []
 
@@ -300,7 +294,7 @@ def confusion_matrix(model, dataloader, num_classes):
 log_graph()
 lin_graph()
 acc_graph()
-confusion_matrix(model, test_loader, num_classes)
+plot_confusion_matrix(model, test_loader, num_classes)
 
 
 """Request gpus"""
