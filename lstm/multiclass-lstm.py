@@ -12,17 +12,97 @@ import matplotlib.pyplot as plt  #data visualization
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 def set_seed(seed):
-  seed = 42   #convention
   torch.manual_seed(seed)
   np.random.seed(seed)
   random.seed(seed)
-set_seed(42)
+set_seed(42)  #convention
 # torch.backends.cudnn.deterministic = True
 # torch.backends.cudnn.benchmark = False
 
 #set device to GPU if available and use CPU otherwise
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Using", device)
+print(f"Using device: {device}...")
+
+
+"""Graphing functions"""
+def log_graph():
+  plt.figure(figsize=(10,5))
+  if validation == True:
+    plt.title("Training, Validation, and Testing Loss")
+    plt.plot(train_losses,label="Training Loss")
+    plt.plot(val_losses,label="Validation Loss")
+  else:
+    plt.title("Training and Testing Loss")
+    plt.plot(train_losses,label="Training Loss")
+  plt.plot(test_losses,label="Testing Loss")
+  plt.xlabel("Epochs")
+  plt.ylabel("Loss")
+  plt.yscale('log')
+  plt.legend()
+  plt.savefig("/projects/expmmllab/LSTMcx/graphs/logscalelossm.png")
+  print("Log scale loss graph saved :)")
+  plt.show()
+
+def lin_graph():
+  plt.figure(figsize=(10,5))
+  if validation == True:
+    plt.title("Training, Validation, and Testing Loss")
+    plt.plot(train_losses,label="Training Loss")
+    plt.plot(val_losses,label="Validation Loss")
+  else:
+    plt.title("Training and Testing Loss")
+    plt.plot(train_losses,label="Training Loss")
+  plt.plot(test_losses,label="Testing Loss")
+  plt.xlabel("Epochs")
+  plt.ylabel("Loss")
+  plt.legend()
+  plt.savefig("/projects/expmmllab/LSTMcx/graphs/linscalelossm.png")
+  print("Linear scale loss graph saved :)")
+  plt.show()
+
+def acc_graph():
+  plt.figure(figsize=(10,5))
+  if validation == True:
+    plt.title("Training, Validation, and Testing Accuracy")
+    plt.plot(train_accs,label="Training Accuracy")
+    plt.plot(val_accs,label="Validation Accuracy")
+  else:
+    plt.title("Training and Testing Loss")
+    plt.plot(train_accs,label="Training Accuracy")
+  plt.plot(test_accs,label="Testing Accuracy")
+  plt.xlabel("Epochs")
+  plt.ylabel("Accuracy (%)")
+  plt.legend()
+  plt.savefig("/projects/expmmllab/LSTMcx/graphs/accuracym.png")
+  print("Accuracy graph saved :)")
+  plt.show()
+
+
+"""Confusion matrix"""
+def plot_confusion_matrix(model, dataloader, num_classes):
+    all_preds = []
+    all_targets = []
+
+    model.eval()
+    with torch.no_grad():
+        for x, y in dataloader:
+           # x, y = x.to(device), y.to(device)
+            logits = model(x)
+            preds = torch.argmax(logits, dim=-1)
+            mask = (y != -100)
+            all_preds.extend(preds[mask].cpu().tolist())
+            all_targets.extend(y[mask].cpu().tolist())
+
+    cm = confusion_matrix(all_targets, all_preds, labels=list(range(num_classes)))
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["e", "1", "2", "12", "21", "121"])
+    disp.plot(cmap="Blues", xticks_rotation=45)
+    plt.title(f"Confusion Matrix (Epoch {epoch+1})" if epoch is not None else "Confusion Matrix")
+    plt.tight_layout()
+    filename = f"/projects/expmmllab/LSTMcx/graphs/mcm_epoch{epoch+1}.png" if epoch is not None else f"/projects/expmmllab/LSTMcx/graphs/mcm.png"
+    plt.savefig(filename)
+    plt.close()
+    print("Confusion matrix saved :)")
+
 
 """Prep dataset"""
 class WordDataset(Dataset):
@@ -81,38 +161,38 @@ class MultiClassLSTM(nn.Module):
 
 """Load datasets"""
 #training dataset
-train_set = WordDataset(data_dir='/projects/expmmllab/LSTMcx/1ktrainm.csv') #check paths every time; if a syntax error is raised, make sure paths contain backslashes, NOT forward slashes
-train_loader = DataLoader(train_set, batch_size=64, shuffle=True)
+train_set = WordDataset(data_dir='/projects/expmmllab/LSTMcx/datasets/15ktrainm.csv') #check paths every time; if a syntax error is raised, make sure paths contain backslashes, NOT forward slashes
+train_loader = DataLoader(train_set, batch_size=512, shuffle=True)
 
 #testing datasets
-testing_sets = WordDataset(data_dir='/projects/expmmllab/LSTMcx/1ktestm.csv')
-test_loader = DataLoader(testing_sets, batch_size=64, shuffle=True)
+testing_sets = WordDataset(data_dir='/projects/expmmllab/LSTMcx/datasets/15ktestm.csv')
+test_loader = DataLoader(testing_sets, batch_size=512, shuffle=True)
 
 #validation toggle: True for on, False for off
-validation = True
+validation = False
 
 #split testing dataset into validation and test sets
 if validation == True:
   val_size = int(len(testing_sets) * 0.2)   #20% for validation, 80% for testing
   test_size = len(testing_sets) - val_size
   val_set, test_set = random_split(testing_sets, [val_size, test_size]) 
-  val_loader = DataLoader(val_set, batch_size=64, shuffle=False)
-  test_loader = DataLoader(test_set, batch_size=64, shuffle=False)
+  val_loader = DataLoader(val_set, batch_size=512, shuffle=False)
+  test_loader = DataLoader(test_set, batch_size=512, shuffle=False)
 
 
 """Model parameters"""
 vocab_size = train_set.vocab_size   #build vocab size on training data
-embedding_dim = 4                   #token embedding dimension
-hidden_size = 16                    #size of LSTM hidden state
+embedding_dim = 32                   #token embedding dimension
+hidden_size = 64                    #size of LSTM hidden state
 num_layers = 1                      #number of LSTM layers
 num_classes = 6                     #number of label classes
-num_epochs = 10
+num_epochs = 100
 
 model = MultiClassLSTM(vocab_size, embedding_dim, hidden_size, num_layers, num_classes)
 print(model)
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0) 
+optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-3) 
 #optimizer = optim.AdamW(model.parameters(), lr=0.001)
 
 
@@ -125,7 +205,7 @@ else:
   train_losses, test_losses = [],[]
   train_accs, test_accs = [],[]
 
-start = time.time() 
+start = time.time()  #timer start
 
 for epoch in range(num_epochs):
     train_correct = 0
@@ -137,6 +217,12 @@ for epoch in range(num_epochs):
     for batch_item in train_loader:
         X_batch = batch_item[0]    #input token seq
         y_batch = batch_item[1]    #label seq
+        #outputs = model(X_batch)   #predicted probabilities
+        #print("outputs shape:", outputs.shape) #debugging
+        #print("outputs dtype:", outputs.dtype) #debugging
+
+        #print("y_batch shape:", y_batch.shape) #debugging
+        #print("y_batch dtype:", y_batch.dtype) #debugging
 
         outputs = model(X_batch)                    #(batch_size, seq_len, num_classes)
         outputs = outputs.view(-1, num_classes)     #flatten tokens
@@ -168,6 +254,7 @@ for epoch in range(num_epochs):
 
       for batch_item in val_loader:
           X_batch = batch_item[0]
+          #print(X_batch.shape) #debugging
           y_batch = batch_item[1]
           outputs = model(X_batch) 
           outputs = outputs.view(-1, num_classes)  
@@ -194,9 +281,9 @@ for epoch in range(num_epochs):
     for batch_item in test_loader:
       X_batch = batch_item[0]
       y_batch = batch_item[1]
-      outputs = model(X_batch)  
-      outputs = outputs.view(-1, num_classes) 
-      y_batch = y_batch.view(-1) 
+      outputs = model(X_batch)  # (batch_size, seq_len, num_classes)
+      outputs = outputs.view(-1, num_classes)  # flatten tokens
+      y_batch = y_batch.view(-1)  # flatten tokens
 
       loss = criterion(outputs, y_batch)
       testing_loss += loss.item()
@@ -210,8 +297,11 @@ for epoch in range(num_epochs):
     test_losses.append(avg_test_loss)
     test_accs.append(100 * test_correct / test_total)
 
+    if (epoch + 1) % 1 == 0:
+      plot_confusion_matrix(model, test_loader, num_classes=num_classes)
+
     #write data to a file (change path as needed); manually clear out.txt after saving a copy
-    with open("/projects/expmmllab/LSTMcx/out.txt", "a") as f: 
+    with open("/projects/expmmllab/LSTMcx/outm.txt", "a") as f: 
       if validation == True:
         data = f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}, Test Loss: {avg_test_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Validation Accuracy: {100 * val_correct / val_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%'
         f.write(data + "\n")
@@ -225,86 +315,10 @@ for epoch in range(num_epochs):
 elapsed = end - start
 print(f'Process completed in {elapsed:.4f} seconds.')
 
-
-"""Graphing functions"""
-def log_graph():
-  plt.figure(figsize=(10,5))
-  if validation == True:
-    plt.title("Training, Validation, and Testing Loss")
-    plt.plot(train_losses,label="Training Loss")
-    plt.plot(val_losses,label="Validation Loss")
-  else:
-    plt.title("Training and Testing Loss")
-    plt.plot(train_losses,label="Training Loss")
-  plt.plot(test_losses,label="Testing Loss")
-  plt.xlabel("Epochs")
-  plt.ylabel("Loss")
-  plt.yscale('log')
-  plt.legend()
-  plt.savefig("/projects/expmmllab/LSTMcx/logscaleloss.png")
-  print("Log scale loss graph saved :)")
-  plt.show()
-
-def lin_graph():
-  plt.figure(figsize=(10,5))
-  if validation == True:
-    plt.title("Training, Validation, and Testing Loss")
-    plt.plot(train_losses,label="Training Loss")
-    plt.plot(val_losses,label="Validation Loss")
-  else:
-    plt.title("Training and Testing Loss")
-    plt.plot(train_losses,label="Training Loss")
-  plt.plot(test_losses,label="Testing Loss")
-  plt.xlabel("Epochs")
-  plt.ylabel("Loss")
-  plt.legend()
-  plt.savefig("/projects/expmmllab/LSTMcx/linscaleloss.png")
-  print("Linear scale loss graph saved :)")
-  plt.show()
-
-def acc_graph():
-  plt.figure(figsize=(10,5))
-  if validation == True:
-    plt.title("Training, Validation, and Testing Accuracy")
-    plt.plot(train_accs,label="Training Accuracy")
-    plt.plot(val_accs,label="Validation Accuracy")
-  else:
-    plt.title("Training and Testing Loss")
-    plt.plot(train_accs,label="Training Accuracy")
-  plt.plot(test_accs,label="Testing Accuracy")
-  plt.xlabel("Epochs")
-  plt.ylabel("Accuracy (%)")
-  plt.legend()
-  plt.savefig("/projects/expmmllab/LSTMcx/accuracy.png")
-  print("Accuracy graph saved :)")
-  plt.show()
-
-def plot_confusion_matrix(model, dataloader, num_classes):
-    all_preds = []
-    all_targets = []
-
-    model.eval()
-    with torch.no_grad():
-        for x, y in dataloader:
-            x, y = x.to(device), y.to(device)
-            logits = model(x)
-            preds = torch.argmax(logits, dim=-1)
-            mask = (y != -100)
-            all_preds.extend(preds[mask].cpu().tolist())
-            all_targets.extend(y[mask].cpu().tolist())
-
-    cm = confusion_matrix(all_targets, all_preds, labels=list(range(num_classes)))
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["e", "1", "2", "12", "21", "121"])
-    disp.plot(cmap="Blues", xticks_rotation=45)
-    plt.title("Confusion Matrix (Token-level)")
-    plt.tight_layout()
-    plt.savefig("/projects/expmmllab/LSTMcx/confusion_matrix.png")
-    print("Confusion matrix saved :)")
-
 log_graph()
 lin_graph()
 acc_graph()
-plot_confusion_matrix(model, test_loader, num_classes)
+#plot_confusion_matrix(model, test_loader, num_classes)
 
 
 """Request gpus"""
