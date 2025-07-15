@@ -8,8 +8,10 @@ import numpy as np
 import pandas as pd
 import ast
 import time  #for simple timer
+
 import matplotlib.pyplot as plt  #data visualization
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+import plotly.graph_objects as go
 
 def set_seed(seed):
   torch.manual_seed(seed)
@@ -79,7 +81,7 @@ def acc_graph():
 
 
 """Confusion matrix"""
-def plot_confusion_matrix(model, dataloader, num_classes):
+def get_confusion_matrix(model, dataloader, num_classes):
     all_preds = []
     all_targets = []
 
@@ -94,6 +96,10 @@ def plot_confusion_matrix(model, dataloader, num_classes):
             all_targets.extend(y[mask].cpu().tolist())
 
     cm = confusion_matrix(all_targets, all_preds, labels=list(range(num_classes)))
+    return cm
+
+def plot_confusion_matrix(model, dataloader, num_classes):
+    get_confusion_matrix(model, dataloader, num_classes)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["e", "1", "2", "12", "21", "121"])
     disp.plot(cmap="Blues", xticks_rotation=45)
     plt.title(f"Confusion Matrix (Epoch {epoch+1})" if epoch is not None else "Confusion Matrix")
@@ -102,6 +108,77 @@ def plot_confusion_matrix(model, dataloader, num_classes):
     plt.savefig(filename)
     plt.close()
     print("Confusion matrix saved :)")
+
+def matrix_slider(matrices, class_labels):
+    frames = []
+    for i, cm in enumerate(matrices):
+      heatmap = go.Heatmap(
+        z=cm, 
+        colorscale='Blues', 
+        zmin=0, zmax=np.max(matrices), 
+        text=cm.astype(str), 
+        texttemplate="%{text}", 
+        hovertemplate='Actual: %{y}'
+      )
+      frames.append(go.Frame(data=[heatmap], name=str(i)))
+
+    # Initial frame
+    init_cm = matrices[0]
+    heatmap = go.Heatmap(
+      z=init_cm, 
+      colorscale='Blues', 
+      zmin=0, 
+      zmax=np.max(matrices),    #normalise across matrices?
+      text=init_cm.astype(str),
+      texttemplate="%{text}",
+      hovertemplate='Actual: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>'
+    )
+    
+    layout = go.Layout(
+      title='Confusion Matrices',
+      width=600,
+      height=600,
+      yaxis_scaleanchor="x",
+      yaxis_scaleratio=1,
+      xaxis=dict(
+        title='Predicted Label',
+        tickmode='array',
+        tickvals=list(range(num_classes)),
+        ticktext=class_labels,
+      ),
+      yaxis=dict(
+        title='True Label',
+        tickmode='array',
+        tickvals=list(range(num_classes)),
+        ticktext=class_labels,
+        autorange='reversed'
+      ),
+      updatemenus=[dict(
+        type='buttons',
+        buttons=[dict(label='Play',
+                      method='animate',
+                      args=[None, {"frame": {"duration": 500, "redraw": True},
+                                   "fromcurrent": True}]),
+                 dict(label='Stop',
+                      method='animate',
+                      args=[[None], {"frame": {"duration": 0, "redraw": False},
+                                     "mode": "immediate",
+                                     "transition": {"duration": 0}}])]
+    )],
+      sliders=[dict(
+        steps=[dict(method='animate',
+                    args=[[str(k)], {"frame": {"duration": 0, "redraw": True},
+                                     "mode": "immediate"}],
+                    label=f'Epoch {k+1}') for k in range(num_epochs)],
+        transition={"duration": 0},
+        x=0.1, y=0,
+        len=0.9
+    )]
+  )
+    fig = go.Figure(data=[heatmap], layout=layout, frames=frames)
+    #fig.show()
+    fig.write_html("/projects/expmmllab/LSTMcx/graphs/matrix_slider.html")
+    print("Matrix slider saved :)")
 
 
 """Prep dataset"""
@@ -182,11 +259,12 @@ if validation == True:
 
 """Model parameters"""
 vocab_size = train_set.vocab_size   #build vocab size on training data
-embedding_dim = 32                   #token embedding dimension
+embedding_dim = 32                  #token embedding dimension
 hidden_size = 64                    #size of LSTM hidden state
 num_layers = 1                      #number of LSTM layers
 num_classes = 6                     #number of label classes
-num_epochs = 100
+class_labels = ['e', '1', '2', '12', '21', '121']
+num_epochs = 1
 
 model = MultiClassLSTM(vocab_size, embedding_dim, hidden_size, num_layers, num_classes)
 print(model)
@@ -205,6 +283,9 @@ else:
   train_losses, test_losses = [],[]
   train_accs, test_accs = [],[]
 
+#data storage
+confusion_matrices = []
+
 start = time.time()  #timer start
 
 for epoch in range(num_epochs):
@@ -217,12 +298,6 @@ for epoch in range(num_epochs):
     for batch_item in train_loader:
         X_batch = batch_item[0]    #input token seq
         y_batch = batch_item[1]    #label seq
-        #outputs = model(X_batch)   #predicted probabilities
-        #print("outputs shape:", outputs.shape) #debugging
-        #print("outputs dtype:", outputs.dtype) #debugging
-
-        #print("y_batch shape:", y_batch.shape) #debugging
-        #print("y_batch dtype:", y_batch.dtype) #debugging
 
         outputs = model(X_batch)                    #(batch_size, seq_len, num_classes)
         outputs = outputs.view(-1, num_classes)     #flatten tokens
@@ -254,7 +329,6 @@ for epoch in range(num_epochs):
 
       for batch_item in val_loader:
           X_batch = batch_item[0]
-          #print(X_batch.shape) #debugging
           y_batch = batch_item[1]
           outputs = model(X_batch) 
           outputs = outputs.view(-1, num_classes)  
@@ -297,8 +371,10 @@ for epoch in range(num_epochs):
     test_losses.append(avg_test_loss)
     test_accs.append(100 * test_correct / test_total)
 
-    if (epoch + 1) % 1 == 0:
-      plot_confusion_matrix(model, test_loader, num_classes=num_classes)
+    # if (epoch + 1) % 1 == 0:
+    #   plot_confusion_matrix(model, test_loader, num_classes=num_classes)
+    cm = get_confusion_matrix(model, test_loader, num_classes=num_classes)
+    confusion_matrices.append(cm)
 
     #write data to a file (change path as needed); manually clear out.txt after saving a copy
     with open("/projects/expmmllab/LSTMcx/outm.txt", "a") as f: 
@@ -319,7 +395,7 @@ log_graph()
 lin_graph()
 acc_graph()
 #plot_confusion_matrix(model, test_loader, num_classes)
-
+matrix_slider(confusion_matrices, class_labels)
 
 """Request gpus"""
 #srun --gres=gpu:1 --time=02:00:00 --pty bash   
