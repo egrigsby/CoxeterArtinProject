@@ -90,6 +90,8 @@ def get_confusion_matrix(model, dataloader, num_classes):
         for x, y in dataloader:
            # x, y = x.to(device), y.to(device)
             logits = model(x)
+            if isinstance(logits, tuple):
+              logits = logits[0]
             preds = torch.argmax(logits, dim=-1)
             mask = (y != -100)
             all_preds.extend(preds[mask].cpu().tolist())
@@ -99,7 +101,7 @@ def get_confusion_matrix(model, dataloader, num_classes):
     return cm
 
 def plot_confusion_matrix(model, dataloader, num_classes):
-    get_confusion_matrix(model, dataloader, num_classes)
+    cm = get_confusion_matrix(model, dataloader, num_classes)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["e", "1", "2", "12", "21", "121"])
     disp.plot(cmap="Blues", xticks_rotation=45)
     plt.title(f"Confusion Matrix (Epoch {epoch+1})" if epoch is not None else "Confusion Matrix")
@@ -198,7 +200,7 @@ class WordDataset(Dataset):
       int_seq = [int(label) for label in seq]    
       self.labels.append(int_seq)
 
-    self.sequence_length = max(len(seq) for seq in self.data)  #read seq length from padded data
+    self.seq_len = max(len(seq) for seq in self.data)  #read seq length from padded data
 
     #find max number of tokens to determine vocab_size
     all_tokens = [token for seq in self.data for token in seq]
@@ -226,55 +228,97 @@ class MultiClassLSTM(nn.Module):
       embedded = self.embedding(x) #passing through embedding layer
       batch_size = embedded.size(0) #get batch size from embedded tensor
 
-      #initialize hidden and cell states to zero and proper dimensions
-      #h0 = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(embedded.device)
-      #c0 = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(embedded.device)
-
       out, _ = self.lstm(embedded)    #shape: (batch_size, seq_len, hidden_size)
       out = self.fc(out)             #shape: (batch_size, seq_len, num_classes)
 
       return out     #raw logits for cross entropy loss
 
+class LSTMCell(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, hidden_size, num_classes):
+      super().__init__()
+      self.hidden_size = hidden_size
+      self.embedding = nn.Embedding(vocab_size, embedding_dim)  
+      self.lstm_cell = nn.LSTMCell(embedding_dim, hidden_size)
+      self.fc = nn.Linear(hidden_size, num_classes) 
 
-"""Load datasets"""
-#training dataset
-train_set = WordDataset(data_dir='/projects/expmmllab/LSTMcx/datasets/15ktrainm.csv') #check paths every time; if a syntax error is raised, make sure paths contain backslashes, NOT forward slashes
-train_loader = DataLoader(train_set, batch_size=512, shuffle=True)
+    def forward(self, x):
+      embedded = self.embedding(x) #passing through embedding layer
+      batch_size, seq_len = x.size() #get batch size from embedded tensor
 
-#testing datasets
-testing_sets = WordDataset(data_dir='/projects/expmmllab/LSTMcx/datasets/15ktestm.csv')
-test_loader = DataLoader(testing_sets, batch_size=512, shuffle=True)
+      #initialize hidden and cell states to zero and proper dimensions
+      h_t = torch.zeros(batch_size, self.hidden_size).to(x.device)
+      c_t = torch.zeros(batch_size, self.hidden_size).to(x.device)
+
+      hidden_states = []
+      cell_states = []
+
+      for t in range(seq_len):
+        h_t, c_t = self.lstm_cell(embedded[:,t,:], (h_t, c_t))
+        hidden_states.append(h_t)
+        cell_states.append(c_t)
+
+      hidden_states = torch.stack(hidden_states, dim=1)
+      cell_states = torch.stack(cell_states, dim=1)
+
+      out = self.fc(hidden_states)            
+
+      # print(f"Hidden states: {hidden_states}") #debugging
+      # print(f"Cell states: {cell_states}")     #debugging
+
+      return out, hidden_states, cell_states     
+
+
+"""Options"""
+#LSTMCell toggle: tracks and returns all hidden and cell states if True
+return_states = True
 
 #validation toggle: True for on, False for off
 validation = False
 
-#split testing dataset into validation and test sets
-if validation == True:
-  val_size = int(len(testing_sets) * 0.2)   #20% for validation, 80% for testing
-  test_size = len(testing_sets) - val_size
-  val_set, test_set = random_split(testing_sets, [val_size, test_size]) 
-  val_loader = DataLoader(val_set, batch_size=512, shuffle=False)
-  test_loader = DataLoader(test_set, batch_size=512, shuffle=False)
+#plot confusion matrices as individual pngs if True; otherwise a slider html is created
+print_cm = False
 
 
 """Model parameters"""
-vocab_size = train_set.vocab_size   #build vocab size on training data
+vocab_size = 3
+#vocab_size = train_set.vocab_size   #build vocab size on training data
 embedding_dim = 32                  #token embedding dimension
 hidden_size = 64                    #size of LSTM hidden state
 num_layers = 1                      #number of LSTM layers
+batch_size = 512
 num_classes = 6                     #number of label classes
 class_labels = ['e', '1', '2', '12', '21', '121']
-num_epochs = 1
+num_epochs = 100
 
-model = MultiClassLSTM(vocab_size, embedding_dim, hidden_size, num_layers, num_classes)
-print(model)
+if return_states == True:
+  model = LSTMCell(vocab_size, embedding_dim, hidden_size, num_classes)
+else:
+  model = MultiClassLSTM(vocab_size, embedding_dim, hidden_size, num_layers, num_classes)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-3) 
 #optimizer = optim.AdamW(model.parameters(), lr=0.001)
 
 
-"""Training loop"""
+"""Load datasets"""
+#training dataset
+train_set = WordDataset(data_dir='/projects/expmmllab/LSTMcx/datasets/15ktrainm.csv') #check paths every time; if a syntax error is raised, make sure paths contain backslashes, NOT forward slashes
+train_loader = DataLoader(train_set, batch_size, shuffle=True)
+
+#testing datasets
+testing_sets = WordDataset(data_dir='/projects/expmmllab/LSTMcx/datasets/15ktestm.csv')
+test_loader = DataLoader(testing_sets, batch_size, shuffle=False)
+
+#split testing dataset into validation and test sets
+if validation == True:
+  val_size = int(len(testing_sets) * 0.2)   #20% for validation, 80% for testing
+  test_size = len(testing_sets) - val_size
+  val_set, test_set = random_split(testing_sets, [val_size, test_size]) 
+  val_loader = DataLoader(val_set, batch_size, shuffle=False)
+  test_loader = DataLoader(test_set, batch_size, shuffle=False)
+
+
+"""Storage"""
 #loss storage
 if validation == True:
   train_losses, val_losses, test_losses = [],[],[]
@@ -283,12 +327,18 @@ else:
   train_losses, test_losses = [],[]
   train_accs, test_accs = [],[]
 
-#data storage
+#cm storage
 confusion_matrices = []
 
-start = time.time()  #timer start
 
-for epoch in range(num_epochs):
+"""Training loop"""
+if __name__ == "__main__":
+  print(model)
+  print(f"Running {num_epochs} epochs...")
+
+  start = time.time()  #timer start
+
+  for epoch in range(num_epochs):
     train_correct = 0
     train_total = 0
     model.train()
@@ -299,7 +349,11 @@ for epoch in range(num_epochs):
         X_batch = batch_item[0]    #input token seq
         y_batch = batch_item[1]    #label seq
 
-        outputs = model(X_batch)                    #(batch_size, seq_len, num_classes)
+        outputs = model(X_batch)   #(batch_size, seq_len, num_classes)
+
+        if isinstance(outputs, tuple):
+          outputs = outputs[0]    #if out is returned as a tuple, as in LSTMCell, take only logits
+      
         outputs = outputs.view(-1, num_classes)     #flatten tokens
         y_batch = y_batch.view(-1)                  #flatten tokens
 
@@ -316,6 +370,8 @@ for epoch in range(num_epochs):
           train_total += y_batch.numel()             #total tokens (batch_size * seq_len)
           train_correct += (predicted == y_batch).sum().item()
 
+    torch.save(model.state_dict(), "/projects/expmmllab/LSTMcx/logs/mLSTM.pth") #saves trained weights
+
     avg_train_loss = training_loss / len(train_loader)
     train_losses.append(avg_train_loss)
     train_accs.append(100 * train_correct / train_total)
@@ -331,6 +387,10 @@ for epoch in range(num_epochs):
           X_batch = batch_item[0]
           y_batch = batch_item[1]
           outputs = model(X_batch) 
+
+          if isinstance(outputs, tuple):
+            outputs = outputs[0]    #if out is returned as a tuple, as in LSTMCell, take only logits
+      
           outputs = outputs.view(-1, num_classes)  
           y_batch = y_batch.view(-1)  
 
@@ -356,6 +416,10 @@ for epoch in range(num_epochs):
       X_batch = batch_item[0]
       y_batch = batch_item[1]
       outputs = model(X_batch)  # (batch_size, seq_len, num_classes)
+
+      if isinstance(outputs, tuple):
+        outputs = outputs[0]    #if out is returned as a tuple, as in LSTMCell, take only logits
+      
       outputs = outputs.view(-1, num_classes)  # flatten tokens
       y_batch = y_batch.view(-1)  # flatten tokens
 
@@ -371,13 +435,15 @@ for epoch in range(num_epochs):
     test_losses.append(avg_test_loss)
     test_accs.append(100 * test_correct / test_total)
 
-    # if (epoch + 1) % 1 == 0:
-    #   plot_confusion_matrix(model, test_loader, num_classes=num_classes)
+    if print_cm == True:
+      if (epoch + 1) % 1 == 0:    #currently printing every 1 epochs; this logic may need to be fixed (easy though, just rename variable)
+        plot_confusion_matrix(model, test_loader, num_classes=num_classes)
+
     cm = get_confusion_matrix(model, test_loader, num_classes=num_classes)
     confusion_matrices.append(cm)
 
     #write data to a file (change path as needed); manually clear out.txt after saving a copy
-    with open("/projects/expmmllab/LSTMcx/outm.txt", "a") as f: 
+    with open("/projects/expmmllab/LSTMcx/logs/outm.txt", "a") as f: 
       if validation == True:
         data = f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}, Test Loss: {avg_test_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Validation Accuracy: {100 * val_correct / val_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%'
         f.write(data + "\n")
@@ -388,16 +454,16 @@ for epoch in range(num_epochs):
 
     end = time.time()  #timer end
 
-elapsed = end - start
-print(f'Process completed in {elapsed:.4f} seconds.')
+  elapsed = end - start
+  print(f'Process completed in {elapsed:.4f} seconds.')
 
-log_graph()
-lin_graph()
-acc_graph()
-#plot_confusion_matrix(model, test_loader, num_classes)
-matrix_slider(confusion_matrices, class_labels)
+  log_graph()
+  lin_graph()
+  acc_graph()
+  matrix_slider(confusion_matrices, class_labels)
+
 
 """Request gpus"""
 #srun --gres=gpu:1 --time=02:00:00 --pty bash   
 #nvidia-smi
-#python /projects/expmmllab/LSTMcx/multiclass-lstm.py
+#python /projects/expmmllab/LSTMcx/multiclass_LSTM.py
