@@ -150,11 +150,13 @@ class Coxeter:
           b = tWord[insertion_point]
 
     ## Get list of ALL validly sized relators (+ inverses hence all)
-    all_relators = list(coxGroup.ALL_RELATORS)
+    all_relators = list(coxGroup.ALL_BIG_RELATORS)
 
     ## Generate W (generated semi randomly) (returning w * conjugate * w_inv)
-    w = []  
-    w_max_length = (maxWordLen - max([len(x) for x in coxGroup.RELATORS]))  // 2        # max word len - max relator length // 2
+    w = []
+    # First remove the relators that are greater than maxWordLen    #TODO: cache all possibilities to remove inefficency? 
+    smallishRelators = [rel for rel in coxGroup.RELATORS if len(rel) <= maxWordLen]
+    w_max_length = (maxWordLen - max([len(x) for x in smallishRelators]))  // 2        # max word len - max relator length // 2
     w_length = random.randint(0,w_max_length)    
     for _ in range(w_length):
       w.append(random.choice(coxGroup.GENERATORS))

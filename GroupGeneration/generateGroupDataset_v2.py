@@ -1,3 +1,4 @@
+# NEVER PUSH THIS, ssh has latest
 import logging
 from pathlib import Path
 import random
@@ -113,18 +114,24 @@ class DataGenerator:
     
     # Timeout loop for A PART of the whole dataset being generated
 
-    max_idle_time = 0.5
+    max_idle_time = 10
     last_addition_time = time.time()
     while True:
       # timeout condition
       B_overallTimeoutReached = time.time() - startTime > maxTime
       B_noProgressTimeoutReached = time.time() - last_addition_time > max_idle_time
       B_completedTrivialSetSize = s.totalTrivialWords_num + lenTrivialSet >= s.target_trivial_word_count
-      if B_overallTimeoutReached or B_noProgressTimeoutReached or B_completedTrivialSetSize:
-          logger.info(f"Word size {setWordLen:<3} done | "
-                      f"Time Used {time.time()-startTime:<8.4f} | "
-                      f"Words Generated {len(trivialWordsSet)}")
-          break
+      if B_overallTimeoutReached or B_completedTrivialSetSize or B_noProgressTimeoutReached:
+        timeoutMsg = (
+            "(Completed)" if B_completedTrivialSetSize else
+            "(Max Time)" if B_overallTimeoutReached else
+            "(Stagnant)" if B_noProgressTimeoutReached else
+            "")
+        logger.info(f"{timeoutMsg:<12}| "
+                    f"Word size {setWordLen:<3}| "
+                    f"Time Used {time.time()-startTime:<8.4f} | "
+                    f"Words Generated {len(trivialWordsSet)}")
+        break
       # cache the current number of trivial words
       lenTrivialSet = len(trivialWordsSet)
  
@@ -203,7 +210,7 @@ class DataGenerator:
 
 
 
-  def createTrainTestSplitData(s, rawTrivialPath, rawNontrivialPath, random_state=42):
+  def createTrainTestSplitData(s, rawTrivialPath, rawNontrivialPath, random_state):
       """
       helper function called by 'makeData()' that returns the dataframes according to parameters you give it 
       returns (trainDF, testDF) 
@@ -216,7 +223,7 @@ class DataGenerator:
       # get the properties from the type of dataset based off the name (last subfolder)
       trivialDatasetName:str = getDatasetName(rawTrivialPath)
       nontrivialDatasetName = getDatasetName(rawNontrivialPath)
-      wordLength = trivialDatasetName.split()[0]
+      wordLength = trivialDatasetName.split("-")[0]
 
       # Load data from both classes
       raw_tDF = utils.loadRaw(rawTrivialPath, '0') #raw trivial dataframe
@@ -227,14 +234,14 @@ class DataGenerator:
 
       # creating 2 separate training and testing dataframes (modify test_size param)
       train_size = s.train_size
-      train_df, test_df = train_test_split(raw_df, train_size=train_size, random_state=42, stratify=raw_df['label'])
+      train_df, test_df = train_test_split(raw_df, train_size=train_size, random_state=random_state, stratify=raw_df['label'])
       
       # Optional: print out details of both dataframes
       print("Training set size:", len(train_df))
       print("Testing set size:", len(test_df))
 
       # Save to CSV and return as well
-      train_path = os.path.join(s.datasetPath, f"{wordLength}-{s.train_suffix}")
+      train_path = os.path.join(s.datasetPath, f"{wordLength}-length-{s.train_suffix}")
       test_path = os.path.join(s.datasetPath, f"{wordLength}-{s.test_suffix}")
       train_df.to_csv(train_path, index=False)
       test_df.to_csv(test_path, index=False)
@@ -344,11 +351,13 @@ def debug():
   BR = "."    # break character
   random_state = 1
 
+  # OLD COXETER MATRIX: A2~
   coxeterMatrix = np.array([
       [1, 3, 3],
       [3, 1, 3],
       [3, 3, 1],
   ])
+
   dg = DataGenerator(coxeterMatrix, dataDir="datasets", mode=COXETER, BR=BR)
   dg.groupName = "A2_tilde"
 
@@ -358,7 +367,7 @@ def debug():
   max_wordLen =  22
   fixed_wordLen = max_wordLen
   dg.datasetSize = 129300  #6000 * 2
-  dg.train_size = 0.3
+  dg.train_size = 0.4
   dg._setSizes(min_wordLen, max_wordLen, fixed_wordLen)
 
   # generate folder name for dataset using dataset features (updates folderPath)
@@ -368,8 +377,8 @@ def debug():
   # define directory path (defined via generation or manually)
   
   # DEBUG
-  #dg.makeDatasets(userDatasetPath=dg.datasetPath, random_state=1)
-  dg.datasetPath = dg.dataDir / "1 . A2_tilde . 'coxeter' . 6-22 . pad 22 . size 129,300 . split 30 70"
+  dg.makeDatasets(userDatasetPath=dg.datasetPath, random_state=1)
+  #dg.datasetPath = dg.dataDir / "1 . A2_tilde . 'coxeter' . 6-22 . pad 22 . size 129,300 . split 30 70"
   
   
   # get the paths as dictionaries:
@@ -382,7 +391,7 @@ def debug():
   
   all_relator_dfs = []
   for k in sorted(relator_dict.keys()):
-    relatorDataset_df_dicts[k] = (utils.loadRaw(relator_dict[k][0]), utils.loadRaw(relator_dict[k][1]))
+    relatorDataset_df_dicts[k] = (utils.loadRaw(relator_dict[k][0], label=0), utils.loadRaw(relator_dict[k][1], label=1))
     # add dataframes into one list
     all_relator_dfs.extend(relatorDataset_df_dicts[k]) # add tuple as 2 separate elements
   
@@ -397,11 +406,17 @@ def debug():
 
   
   # Creating CSV's for Trivial/Nontrivial Word Length Mix 
+  trainDFS = []
+  testDFS = []
   for k in sorted(trivial_dict.keys()):
     print(f"Creating CSV's for Word Length: {k}")  
-    dg.createTrainTestSplitData(trivial_dict[k][0], trivial_dict[k][1])
-  
-  
+    trainDF, testDF = dg.createTrainTestSplitData(trivial_dict[k][0], trivial_dict[k][1], random_state=random_state)     #split is implicit 
+    trainDFS.append(trainDF)
+    testDFS.append(testDF)
+    
+  # combine Test CSV's 
+  testing_df = pd.concat(testDFS).sample(frac=1, random_state=random_state).reset_index(drop=True)
+  testing_df.to_csv(dg.datasetPath / "test.csv")
   
   
   #trainDF, testDF = dg.makeDataset(userDatasetPath=dg.datasetPath, random_state=1)
