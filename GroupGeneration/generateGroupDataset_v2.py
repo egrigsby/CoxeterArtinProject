@@ -226,8 +226,10 @@ class DataGenerator:
       wordLength = trivialDatasetName.split("-")[0]
 
       # Load data from both classes
-      raw_tDF = utils.loadRaw(rawTrivialPath, '0') #raw trivial dataframe
-      raw_ntDF = utils.loadRaw(rawNontrivialPath, '1') #raw non-trivial dataframe
+      # NOTE: creating special token based off of the number of generators in our group (should work for both group types)
+      specialToken = len(s.generators) + 1
+      raw_tDF = utils.loadRaw(rawTrivialPath, '0', specialTokenId=specialToken) #raw trivial dataframe
+      raw_ntDF = utils.loadRaw(rawNontrivialPath, '1', specialTokenId=specialToken) #raw non-trivial dataframe
 
       # combines both raw datasets into a single pandas dataframe
       raw_df = pd.concat([raw_tDF, raw_ntDF]).sample(frac=1, random_state=random_state).reset_index(drop=True)
@@ -349,17 +351,17 @@ def setup_logging(level=logging.INFO):
     
 def debug():
   BR = "."    # break character
-  random_state = 1
+  R_SEED = 1
 
   # OLD COXETER MATRIX: A2~
   coxeterMatrix = np.array([
-      [1, 3, 3],
-      [3, 1, 3],
-      [3, 3, 1],
+      [1, 2, 7],
+      [2, 1, 3],
+      [7, 3, 1],
   ])
 
   dg = DataGenerator(coxeterMatrix, dataDir="datasets", mode=COXETER, BR=BR)
-  dg.groupName = "A2_tilde"
+  dg.groupName = "Triangle (237)"
 
 
   # define word length, dataset size, splits 
@@ -377,7 +379,7 @@ def debug():
   # define directory path (defined via generation or manually)
   
   # DEBUG
-  dg.makeDatasets(userDatasetPath=dg.datasetPath, random_state=1)
+  dg.makeDatasets(userDatasetPath=dg.datasetPath, random_state=R_SEED)
   #dg.datasetPath = dg.dataDir / "1 . A2_tilde . 'coxeter' . 6-22 . pad 22 . size 129,300 . split 30 70"
   
   
@@ -391,12 +393,13 @@ def debug():
   
   all_relator_dfs = []
   for k in sorted(relator_dict.keys()):
-    relatorDataset_df_dicts[k] = (utils.loadRaw(relator_dict[k][0], label=0), utils.loadRaw(relator_dict[k][1], label=1))
+    specialToken = len(dg.generators) + 1
+    relatorDataset_df_dicts[k] = (utils.loadRaw(relator_dict[k][0], label=0, specialTokenId=specialToken), utils.loadRaw(relator_dict[k][1], label=1, specialTokenId=specialToken))
     # add dataframes into one list
     all_relator_dfs.extend(relatorDataset_df_dicts[k]) # add tuple as 2 separate elements
   
   # combine all relator datasets into one 
-  relators_df = pd.concat(all_relator_dfs).sample(frac=1, random_state=random_state).reset_index(drop=True)
+  relators_df = pd.concat(all_relator_dfs).sample(frac=1, random_state=R_SEED).reset_index(drop=True)
   relators_df.to_csv(dg.datasetPath / "relators.csv")
   
   # overwrite text files for n-length trivial words, by removing duplicate words that exist in relators
@@ -410,12 +413,12 @@ def debug():
   testDFS = []
   for k in sorted(trivial_dict.keys()):
     print(f"Creating CSV's for Word Length: {k}")  
-    trainDF, testDF = dg.createTrainTestSplitData(trivial_dict[k][0], trivial_dict[k][1], random_state=random_state)     #split is implicit 
+    trainDF, testDF = dg.createTrainTestSplitData(trivial_dict[k][0], trivial_dict[k][1], random_state=R_SEED)     #split is implicit 
     trainDFS.append(trainDF)
     testDFS.append(testDF)
     
   # combine Test CSV's 
-  testing_df = pd.concat(testDFS).sample(frac=1, random_state=random_state).reset_index(drop=True)
+  testing_df = pd.concat(testDFS).sample(frac=1, random_state=R_SEED).reset_index(drop=True)
   testing_df.to_csv(dg.datasetPath / "test.csv")
   
   

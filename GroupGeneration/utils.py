@@ -72,14 +72,16 @@ def readDataset(filepath:str):
   return words  
 
 # TODO
-def loadRaw(filePath, label):
+def loadRaw(filePath, label, specialTokenId):
     with open(filePath, 'r') as file:
         lines = file.readlines()
     # Each line is a list of tokens separated by spaces
     return pd.DataFrame({
-        'tokens': [line.strip().split() for line in lines],
+        'tokens': [(f"{specialTokenId} " + line).strip().split() for line in lines],
         'label': label
     })
+
+    # NOTE adds special token, using total number of generators as its value
 
 
 # file IO stuff
@@ -116,7 +118,6 @@ def group_files_by_type(directory: Path) -> Tuple[
               trivial_dict[length][1] = file
           else:
               trivial_dict[length][0] = file
-              
   # Convert lists to tuples
   relator_dict = {k: tuple(v) for k, v in relator_dict.items() if None not in v}
   trivial_dict = {k: tuple(v) for k, v in trivial_dict.items() if None not in v}
