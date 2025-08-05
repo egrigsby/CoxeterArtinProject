@@ -304,7 +304,7 @@ num_layers = 1                      #number of LSTM layers
 num_classes = 6                     #number of label classes
 class_labels = ['e', '1', '2', '12', '21', '121']
 batch_size = 512
-num_epochs = 1
+num_epochs = 1000
 
 
 """Load datasets"""
@@ -313,15 +313,6 @@ train_set = WordDataset(data_dir='/CoxeterArtinProject/datasets/15ktrainm.csv') 
 train_loader = DataLoader(train_set, batch_size, shuffle=True)
 
 vocab_size = train_set.vocab_size       #build vocab size on training data
-
-if return_states == True:
-  model = LSTMCell(vocab_size, embedding_dim, hidden_size, num_classes)
-else:
-  model = MultiClassLSTM(vocab_size, embedding_dim, hidden_size, num_layers, num_classes)
-
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
-
 
 #testing datasets
 testing_sets = WordDataset(data_dir='/CoxeterArtinProject/datasets/15ktestm.csv')    #change file path as needed!!
@@ -334,6 +325,16 @@ if validation == True:
   val_set, test_set = random_split(testing_sets, [val_size, test_size]) 
   val_loader = DataLoader(val_set, batch_size, shuffle=False)
   test_loader = DataLoader(test_set, batch_size, shuffle=False)
+
+
+"""Load datasets"""
+if return_states == True:
+  model = LSTMCell(vocab_size, embedding_dim, hidden_size, num_classes)
+else:
+  model = MultiClassLSTM(vocab_size, embedding_dim, hidden_size, num_layers, num_classes)
+
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
 
 
 """Storage"""
@@ -390,7 +391,7 @@ if __name__ == "__main__":
           train_total += y_batch.numel()                           #total tokens (batch_size * seq_len)
           train_correct += (predicted == y_batch).sum().item()
 
-    torch.save(model.state_dict(), "/projects/expmmllab/mLSTM.pth") #saves trained weights; change file path as needed
+    torch.save(model.state_dict(), "/projects/expmmllab/mLSTM.pth")       #saves trained weights; change file path as needed
 
     avg_train_loss = training_loss / len(train_loader)
     train_losses.append(avg_train_loss)
