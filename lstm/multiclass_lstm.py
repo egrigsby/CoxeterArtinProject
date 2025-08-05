@@ -1,5 +1,5 @@
 import torch
-import torch.nn as nn   #neural networks functions
+import torch.nn as nn   #neural network functions
 import torch.optim as optim   #optimizers
 from torch.utils.data import DataLoader, Dataset, random_split
 
@@ -13,22 +13,33 @@ import matplotlib.pyplot as plt  #data visualization
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import plotly.graph_objects as go
 
-def set_seed(seed):
-  torch.manual_seed(seed)
-  np.random.seed(seed)
-  random.seed(seed)
-set_seed(42)  #convention
-# torch.backends.cudnn.deterministic = True
-# torch.backends.cudnn.benchmark = False
 
 #set device to GPU if available and use CPU otherwise
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}...")
 
 
+"""Random seed"""
+def set_seed(seed):
+  torch.manual_seed(seed)
+  np.random.seed(seed)
+  random.seed(seed)
+set_seed(42)
+# torch.backends.cudnn.deterministic = True
+
+
+"""Wrong predictions"""
+def save_wrong(name):   #save the incorrect predictions to a CSV file
+  wrong_csv=f'/projects/expmmllab/{name}.csv'             #change file path as needed!!
+  wrong_df = pd.DataFrame(wrong)
+  wrong_df.to_csv(wrong_csv, index=False)
+  print("Saved wrongs :)")
+
+
 """Graphing functions"""
 def log_graph():
   plt.figure(figsize=(10,5))
+
   if validation == True:
     plt.title("Training, Validation, and Testing Loss")
     plt.plot(train_losses,label="Training Loss")
@@ -37,16 +48,19 @@ def log_graph():
     plt.title("Training and Testing Loss")
     plt.plot(train_losses,label="Training Loss")
   plt.plot(test_losses,label="Testing Loss")
+
   plt.xlabel("Epochs")
   plt.ylabel("Loss")
   plt.yscale('log')
   plt.legend()
-  plt.savefig("/projects/expmmllab/LSTMcx/graphs/logscalelossm.png")
+
+  plt.savefig("/projects/expmmllab/logscalelossm.png")      #change file path as needed!!
   print("Log scale loss graph saved :)")
   plt.show()
 
 def lin_graph():
   plt.figure(figsize=(10,5))
+
   if validation == True:
     plt.title("Training, Validation, and Testing Loss")
     plt.plot(train_losses,label="Training Loss")
@@ -55,32 +69,37 @@ def lin_graph():
     plt.title("Training and Testing Loss")
     plt.plot(train_losses,label="Training Loss")
   plt.plot(test_losses,label="Testing Loss")
+
   plt.xlabel("Epochs")
   plt.ylabel("Loss")
   plt.legend()
-  plt.savefig("/projects/expmmllab/LSTMcx/graphs/linscalelossm.png")
+
+  plt.savefig("/projects/expmmllab/linscalelossm.png")      #change file path as needed!!
   print("Linear scale loss graph saved :)")
   plt.show()
 
 def acc_graph():
   plt.figure(figsize=(10,5))
+
   if validation == True:
     plt.title("Training, Validation, and Testing Accuracy")
     plt.plot(train_accs,label="Training Accuracy")
     plt.plot(val_accs,label="Validation Accuracy")
   else:
-    plt.title("Training and Testing Loss")
+    plt.title("Training and Testing Accuracy")
     plt.plot(train_accs,label="Training Accuracy")
   plt.plot(test_accs,label="Testing Accuracy")
+
   plt.xlabel("Epochs")
   plt.ylabel("Accuracy (%)")
   plt.legend()
-  plt.savefig("/projects/expmmllab/LSTMcx/graphs/accuracym.png")
+
+  plt.savefig("/projects/expmmllab/accuracym.png")        #change file path as needed!!
   print("Accuracy graph saved :)")
   plt.show()
 
 
-"""Confusion matrix"""
+"""Confusion matrices"""
 def get_confusion_matrix(model, dataloader, num_classes):
     all_preds = []
     all_targets = []
@@ -91,11 +110,10 @@ def get_confusion_matrix(model, dataloader, num_classes):
            # x, y = x.to(device), y.to(device)
             logits = model(x)
             if isinstance(logits, tuple):
-              logits = logits[0]
+              logits = logits[1]
             preds = torch.argmax(logits, dim=-1)
-            mask = (y != -100)
-            all_preds.extend(preds[mask].cpu().tolist())
-            all_targets.extend(y[mask].cpu().tolist())
+            all_preds.extend(preds.cpu().view(-1).tolist())
+            all_targets.extend(y.cpu().view(-1).tolist())
 
     cm = confusion_matrix(all_targets, all_preds, labels=list(range(num_classes)))
     return cm
@@ -104,9 +122,9 @@ def plot_confusion_matrix(model, dataloader, num_classes):
     cm = get_confusion_matrix(model, dataloader, num_classes)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["e", "1", "2", "12", "21", "121"])
     disp.plot(cmap="Blues", xticks_rotation=45)
-    plt.title(f"Confusion Matrix (Epoch {epoch+1})" if epoch is not None else "Confusion Matrix")
+    plt.title(f"mLSTM Confusion Matrix (Epoch {epoch+1})" if epoch is not None else "mLSTM Confusion Matrix")
     plt.tight_layout()
-    filename = f"/projects/expmmllab/LSTMcx/graphs/mcm_epoch{epoch+1}.png" if epoch is not None else f"/projects/expmmllab/LSTMcx/graphs/mcm.png"
+    filename = f"/projects/expmmllab/mcm_epoch{epoch+1}.png" if epoch is not None else f"/projects/expmmllab/mcm.png"      #change file path as needed!!
     plt.savefig(filename)
     plt.close()
     print("Confusion matrix saved :)")
@@ -124,7 +142,7 @@ def matrix_slider(matrices, class_labels):
       )
       frames.append(go.Frame(data=[heatmap], name=str(i)))
 
-    # Initial frame
+    #initial frame
     init_cm = matrices[0]
     heatmap = go.Heatmap(
       z=init_cm, 
@@ -137,7 +155,7 @@ def matrix_slider(matrices, class_labels):
     )
     
     layout = go.Layout(
-      title='Confusion Matrices',
+      title='mLSTM Confusion Matrices',
       width=600,
       height=600,
       yaxis_scaleanchor="x",
@@ -178,8 +196,7 @@ def matrix_slider(matrices, class_labels):
     )]
   )
     fig = go.Figure(data=[heatmap], layout=layout, frames=frames)
-    #fig.show()
-    fig.write_html("/projects/expmmllab/LSTMcx/graphs/matrix_slider.html")
+    fig.write_html("/projects/expmmllab/mcm_slider.html")         #change file path as needed!!
     print("Matrix slider saved :)")
 
 
@@ -207,12 +224,12 @@ class WordDataset(Dataset):
     self.vocab_size = max(all_tokens) + 1
 
   def __len__(self):
-    return len(self.data)  #returns the total number of samples in the dataset
+    return len(self.data)    #returns the total number of samples in the dataset
 
   def __getitem__(self, index):
     words = torch.tensor(self.data[index], dtype=torch.long)
     labels = torch.tensor(self.labels[index], dtype=torch.long)
-    return words, labels #return word tensor and label tensor
+    return words, labels     #return word tensor and label tensor
 
 """Define multi-class classification model"""
 class MultiClassLSTM(nn.Module):
@@ -222,14 +239,13 @@ class MultiClassLSTM(nn.Module):
       self.num_layers = num_layers
       self.embedding = nn.Embedding(vocab_size, embedding_dim)   #embedding layer
       self.lstm = nn.LSTM(embedding_dim, hidden_size, num_layers, batch_first=True)
-      self.fc = nn.Linear(hidden_size, num_classes) #fully connected layer for multiclass classification
+      self.fc = nn.Linear(hidden_size, num_classes)     #fully connected layer for multiclass classification
 
     def forward(self, x):
-      embedded = self.embedding(x) #passing through embedding layer
-      batch_size = embedded.size(0) #get batch size from embedded tensor
+      embedded = self.embedding(x)    #passing through embedding layer
 
       out, _ = self.lstm(embedded)    #shape: (batch_size, seq_len, hidden_size)
-      out = self.fc(out)             #shape: (batch_size, seq_len, num_classes)
+      out = self.fc(out)              #shape: (batch_size, seq_len, num_classes)
 
       return out     #raw logits for cross entropy loss
 
@@ -242,10 +258,10 @@ class LSTMCell(nn.Module):
       self.fc = nn.Linear(hidden_size, num_classes) 
 
     def forward(self, x):
-      embedded = self.embedding(x) #passing through embedding layer
-      batch_size, seq_len = x.size() #get batch size from embedded tensor
+      embedded = self.embedding(x)
+      batch_size, seq_len = x.size()   #get batch size from embedded tensor
 
-      #initialize hidden and cell states to zero and proper dimensions
+      #manually initialize hidden and cell states to zero and proper dimensions
       h_t = torch.zeros(batch_size, self.hidden_size).to(x.device)
       c_t = torch.zeros(batch_size, self.hidden_size).to(x.device)
 
@@ -260,17 +276,16 @@ class LSTMCell(nn.Module):
       hidden_states = torch.stack(hidden_states, dim=1)
       cell_states = torch.stack(cell_states, dim=1)
 
-      out = self.fc(hidden_states)            
+      final_hidden = hidden_states[:,t,:]
+      out = self.fc(final_hidden)            
+      logits = self.fc(hidden_states)  
 
-      # print(f"Hidden states: {hidden_states}") #debugging
-      # print(f"Cell states: {cell_states}")     #debugging
-
-      return out, hidden_states, cell_states     
+      return out, logits, hidden_states, cell_states     
 
 
 """Options"""
-#LSTMCell toggle: tracks and returns all hidden and cell states if True
-return_states = True
+#LSTMCell toggle: tracks and returns all hidden and cell states for later analysis if True; otherwise run with normal module
+return_states = False
 
 #validation toggle: True for on, False for off
 validation = False
@@ -278,17 +293,26 @@ validation = False
 #plot confusion matrices as individual pngs if True; otherwise a slider html is created
 print_cm = False
 
+#wrong prediction csv generation
+save_wrong_preds = False
+
 
 """Model parameters"""
-vocab_size = 3
-#vocab_size = train_set.vocab_size   #build vocab size on training data
 embedding_dim = 32                  #token embedding dimension
-hidden_size = 64                    #size of LSTM hidden state
+hidden_size = 6                     #size of LSTM hidden state
 num_layers = 1                      #number of LSTM layers
-batch_size = 512
 num_classes = 6                     #number of label classes
 class_labels = ['e', '1', '2', '12', '21', '121']
-num_epochs = 100
+batch_size = 512
+num_epochs = 1
+
+
+"""Load datasets"""
+#training dataset
+train_set = WordDataset(data_dir='/CoxeterArtinProject/datasets/15ktrainm.csv') #change file path as needed; if a syntax error is raised, make sure paths contain backslashes, NOT forward slashes
+train_loader = DataLoader(train_set, batch_size, shuffle=True)
+
+vocab_size = train_set.vocab_size       #build vocab size on training data
 
 if return_states == True:
   model = LSTMCell(vocab_size, embedding_dim, hidden_size, num_classes)
@@ -296,17 +320,11 @@ else:
   model = MultiClassLSTM(vocab_size, embedding_dim, hidden_size, num_layers, num_classes)
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-3) 
-#optimizer = optim.AdamW(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
 
-
-"""Load datasets"""
-#training dataset
-train_set = WordDataset(data_dir='/projects/expmmllab/LSTMcx/datasets/15ktrainm.csv') #check paths every time; if a syntax error is raised, make sure paths contain backslashes, NOT forward slashes
-train_loader = DataLoader(train_set, batch_size, shuffle=True)
 
 #testing datasets
-testing_sets = WordDataset(data_dir='/projects/expmmllab/LSTMcx/datasets/15ktestm.csv')
+testing_sets = WordDataset(data_dir='/CoxeterArtinProject/datasets/15ktestm.csv')    #change file path as needed!!
 test_loader = DataLoader(testing_sets, batch_size, shuffle=False)
 
 #split testing dataset into validation and test sets
@@ -330,6 +348,10 @@ else:
 #cm storage
 confusion_matrices = []
 
+#wrong prediction storage
+wrong=[] 
+wrong_set = set()  
+
 
 """Training loop"""
 if __name__ == "__main__":
@@ -348,33 +370,32 @@ if __name__ == "__main__":
     for batch_item in train_loader:
         X_batch = batch_item[0]    #input token seq
         y_batch = batch_item[1]    #label seq
-
         outputs = model(X_batch)   #(batch_size, seq_len, num_classes)
 
         if isinstance(outputs, tuple):
-          outputs = outputs[0]    #if out is returned as a tuple, as in LSTMCell, take only logits
+          outputs = outputs[1]           #if out is returned as a tuple, as in LSTMCell, take only logits
       
         outputs = outputs.view(-1, num_classes)     #flatten tokens
         y_batch = y_batch.view(-1)                  #flatten tokens
-
         loss = criterion(outputs, y_batch)
 
-        loss.backward()    #runs backpropagation
+        loss.backward()    #run backpropagation
         optimizer.step()
         optimizer.zero_grad()
 
         training_loss += loss.item()
 
         with torch.no_grad():
-          _, predicted = torch.max(outputs, dim=1)   #max over classes dim
-          train_total += y_batch.numel()             #total tokens (batch_size * seq_len)
+          _, predicted = torch.max(outputs, dim=1)                 #max over classes dim
+          train_total += y_batch.numel()                           #total tokens (batch_size * seq_len)
           train_correct += (predicted == y_batch).sum().item()
 
-    torch.save(model.state_dict(), "/projects/expmmllab/LSTMcx/logs/mLSTM.pth") #saves trained weights
+    torch.save(model.state_dict(), "/projects/expmmllab/mLSTM.pth") #saves trained weights; change file path as needed
 
     avg_train_loss = training_loss / len(train_loader)
     train_losses.append(avg_train_loss)
     train_accs.append(100 * train_correct / train_total)
+
 
     #validation
     if validation == True:
@@ -389,11 +410,10 @@ if __name__ == "__main__":
           outputs = model(X_batch) 
 
           if isinstance(outputs, tuple):
-            outputs = outputs[0]    #if out is returned as a tuple, as in LSTMCell, take only logits
+            outputs = outputs[1]    
       
           outputs = outputs.view(-1, num_classes)  
           y_batch = y_batch.view(-1)  
-
           loss = criterion(outputs, y_batch)
           validation_loss += loss.item()
 
@@ -415,14 +435,13 @@ if __name__ == "__main__":
     for batch_item in test_loader:
       X_batch = batch_item[0]
       y_batch = batch_item[1]
-      outputs = model(X_batch)  # (batch_size, seq_len, num_classes)
+      outputs = model(X_batch)
 
       if isinstance(outputs, tuple):
-        outputs = outputs[0]    #if out is returned as a tuple, as in LSTMCell, take only logits
+        outputs = outputs[1]    
       
-      outputs = outputs.view(-1, num_classes)  # flatten tokens
-      y_batch = y_batch.view(-1)  # flatten tokens
-
+      outputs = outputs.view(-1, num_classes)  
+      y_batch = y_batch.view(-1)  
       loss = criterion(outputs, y_batch)
       testing_loss += loss.item()
 
@@ -431,19 +450,37 @@ if __name__ == "__main__":
         test_total += y_batch.numel()
         test_correct += (predicted == y_batch).sum().item()
 
+        batch_sz, seq_l = X_batch.shape             #get batch size and sequence length
+        preds=predicted.view(batch_sz, seq_l)       #reshape predicted to match batch size and sequence length
+        y_batch_seq=y_batch.view(batch_sz, seq_l)   #reshape y_batch to match
+        
+        #check wrong predictions at each epoch
+        for i in range(batch_sz):  
+            pred_seq=preds[i].tolist()
+            label_seq=y_batch_seq[i].tolist()
+            in_seq = X_batch[i].tolist()
+
+            if pred_seq != label_seq:
+              entry = {'epoch': epoch + 1, 'tokens': in_seq, 'label': label_seq, 'predicted': pred_seq}
+              entry_key = (epoch + 1, tuple(in_seq), tuple(label_seq), tuple(pred_seq))  #create a unique key for entry to add to wrong_set
+              if entry_key not in wrong_set:
+                wrong.append(entry)
+                wrong_set.add(entry_key)
+
     avg_test_loss = testing_loss / len(test_loader)
     test_losses.append(avg_test_loss)
     test_accs.append(100 * test_correct / test_total)
-
+    
+    
     if print_cm == True:
-      if (epoch + 1) % 1 == 0:    #currently printing every 1 epochs; this logic may need to be fixed (easy though, just rename variable)
+      if (epoch + 1) % 10 == 0:    #currently printing every 10 epochs
         plot_confusion_matrix(model, test_loader, num_classes=num_classes)
 
     cm = get_confusion_matrix(model, test_loader, num_classes=num_classes)
     confusion_matrices.append(cm)
 
     #write data to a file (change path as needed); manually clear out.txt after saving a copy
-    with open("/projects/expmmllab/LSTMcx/logs/outm.txt", "a") as f: 
+    with open("/projects/expmmllab/outm.txt", "a") as f: 
       if validation == True:
         data = f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}, Test Loss: {avg_test_loss:.4f}, Train Accuracy: {100 * train_correct / train_total:.4f}%, Validation Accuracy: {100 * val_correct / val_total:.4f}%, Test Accuracy: {100 * test_correct / test_total:.4f}%'
         f.write(data + "\n")
@@ -462,8 +499,12 @@ if __name__ == "__main__":
   acc_graph()
   matrix_slider(confusion_matrices, class_labels)
 
+  if save_wrong_preds:
+    filename = input("Name wrong file (no slashes): ").strip().lower()
+    save_wrong(filename)
+
 
 """Request gpus"""
-#srun --gres=gpu:1 --time=02:00:00 --pty bash   
-#nvidia-smi
-#python /projects/expmmllab/LSTMcx/multiclass_LSTM.py
+#srun --gres=gpu:1 --time=08:00:00 --pty bash             #to request time
+#nvidia-smi                                               #for more details
+#python /CoxeterArtinProject/lstm/multiclass_LSTM.py      #to run file
