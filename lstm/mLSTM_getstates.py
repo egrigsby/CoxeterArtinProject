@@ -1,9 +1,10 @@
 import torch
 import json
+import pandas as pd
 import sys
 sys.path.append('/projects/expmmllab/LSTMcx')
 
-from multiclass_LSTM import WordDataset, LSTMCell
+from multiclass_LSTM import WordDataset, LSTMCell, optimizer
 from torch.utils.data import DataLoader, Dataset
 import time
 
@@ -24,12 +25,13 @@ test_path = "/projects/expmmllab/LSTMcx/datasets/15ktestm.csv"
 out_path_h = "/projects/expmmllab/LSTMcx/logs/hiddenstatesm.json"
 out_path_c = "/projects/expmmllab/LSTMcx/logs/cellstatesm.json"
 
+#make sure these match the parameters of the saved model!
 embedding_dim = 32
 hidden_size = 64
 vocab_size = 3
 batch_size = 512
 num_classes = 6
-#max_samples = 100000
+epoch = 1000
 
 
 """Loading model data"""
@@ -52,18 +54,16 @@ start = time.time()
 with torch.no_grad():
     for x, y in test_loader:
         x, y = x.to(device), y.to(device)
-        _, h, c = model(x)
-        # hidden.append(h.squeeze(0).cpu())     #relic, delete later
-        # cell.append(c.squeeze(0).cpu())
-        # labels.append(y.squeeze(0).cpu())
+        logits, h, c = model(x)
         hidden.append(h.cpu()) 
         cell.append(c.cpu())
         labels.append(y.cpu())
+        pred_labels_seq = torch.argmax(logits, dim=-1).tolist()
 print(f"Extraction took {time.time()-start:.4f} seconds.")
-
+#print(pred_labels_seq) #debugging
 
 """Saving options"""
-save_json = input("Do you want to save states to JSON? (y/n): ").strip().lower() == 'y'
+save_json = False
 if save_json:
     #convert tensors to lists
     hidden = torch.cat(hidden, dim=0).tolist()
@@ -83,7 +83,7 @@ if save_json:
     print(f"Saved {len(cell)} cell sequences in {time.time()-start:.4f} seconds :)")
 
 #save to pt file
-torch.save({"hidden": hidden, "cell": cell, "labels": labels}, "/projects/expmmllab/LSTMcx/logs/mstates.pt")
+torch.save({"epoch": epoch, "hidden": hidden, "cell": cell, "labels": labels}, "/projects/expmmllab/LSTMcx/logs/mstates.pt")
 print("Saved to mstates.pt.")
 
 
@@ -95,38 +95,43 @@ cell_tensor = torch.cat(cell, dim=0)
 print("Combined cell shape:", cell_tensor.shape)
 labels_tensor = torch.cat(labels, dim=0)
 print("Combined labels shape:", cell_tensor.shape)
-print(labels)
-print(labels_tensor)
+#print(f"Labels are: {labels}")     #debugging
+#print(labels_tensor.shape)         #debugging
+#print(labels_tensor(min), labels_tensor(max))
 
 #mean pooling
-#mean pool over sequence length, turning shape from [seq_len, hidden_dim] to just [hidden_dim]??
+#mean pool over sequence length, turning shape from [seq_len, hidden_dim] to just [hidden_dim]
 pooled_hidden = [seq.mean(dim=0).numpy() for seq in hidden_tensor]
 X = np.stack(pooled_hidden)
 print("Pooled X shape:", X.shape)
 
-#extract first non-padding label per sequence
+pooled_cell = [seq.mean(dim=0).numpy() for seq in cell_tensor]
+Y = np.stack(pooled_cell)
+print("Pooled Y shape:", Y.shape)
+
+
+#extract first label per sequence
 flat_labels = []
 for seq in labels_tensor:
-    valid = seq[seq != -100]
-    flat_labels.append(int(valid[0]) if len(valid) > 0 else -1)
+     arr = np.array(seq, dtype=int)
+     most_common = Counter(arr).most_common(1)[0][0]
+     #print(f"Most common label is {most_common}")
+     flat_labels.append(int(most_common)) 
 y = np.array(flat_labels)
+print(f"shape of flat labels is {y.shape}")
 print(y)
 
-#filter out invalid (-1) labels
-mask = (y != -1)
-X = X[mask]
-y = y[mask]
-
-# Print label distribution to confirm all classes present - roman what does this mean
-unique_labels = sorted(set(y))
+# Print label distribution to confirm all classes present
+unique_labels = np.unique(y)
 print("Unique labels:", unique_labels)
 print("Label counts:", Counter(y))
 
 
 """Individual sequence trajectory"""
 #select a sequence
-seq_id = 42
+seq_id = 1
 seq_hidden = hidden_tensor[seq_id] #shape [seq_len, hidden_dim]
+seq_pred = pred_labels_seq[seq_id]
 
 #pca on selected sequence
 print("Starting PCA...")
@@ -137,6 +142,7 @@ print(f"PCA took {time.time()-start:.4f} seconds.")
 print(pca.explained_variance_ratio_)        #debugging
 
 timesteps = list(range(len(ht_pca)))
+#classes = labels       #color dots according to true labels, then cluster
 
 #plotting
 print("Plotting hidden state trajectory...")
@@ -146,14 +152,17 @@ fig.add_trace(go.Scatter(
     x=ht_pca[:,0], 
     y=ht_pca[:,1],
     mode='lines+markers',
-    text=[f'Time step {t+1}' for t in timesteps],
-    hoverinfo='text',
+    # text=[f'Time step {t+1}' for t in timesteps],
+    # hoverinfo='text',
     marker=dict(
         size=11, 
-        color=timesteps,
-        colorscale='Viridis',
-        colorbar=dict(title="Time step")
+        color=seq_pred
+        # color=timesteps,
+        # colorscale='Viridis',
+        # colorbar=dict(title="Time step")
     ),
+    text = [f'Time step {t+1}, Predicted label {seq_pred[t]}' for t in timesteps],
+    hoverinfo='text',
     line=dict(color='blue', width=1),
     name=f"Sequence {seq_id}"
 ))
@@ -164,13 +173,9 @@ fig.update_layout(
     yaxis_title="PC2"
 )
 print(f"Plotted in {time.time()-start:.4f} seconds.")
-fig.write_image('/projects/expmmllab/LSTMcx/graphs/ht.png')
-fig.write_html('/projects/expmmllab/LSTMcx/graphs/ht.html')
+fig.write_image('/projects/expmmllab/LSTMcx/graphs/mht.png')
+fig.write_html('/projects/expmmllab/LSTMcx/graphs/mht.html')
 print("Hidden state trajectory saved :)")
-# print("Writing to html...")
-# start = time.time()
-# fig.write_html("/projects/expmmllab/LSTMcx/graphs/ht_slider.html")
-# print(f"Hidden trajectory slider saved in {time.time()-start:.4f} seconds :)")
 
 
 #select a sequence
@@ -194,14 +199,18 @@ fig.add_trace(go.Scatter(
     x=ct_pca[:,0], 
     y=ct_pca[:,1],
     mode='lines+markers',
-    text=[f'Time step {t+1}' for t in timesteps],
-    hoverinfo='text',
+    # text=[f'Time step {t+1}' for t in timesteps],
+    # hoverinfo='text',
     marker=dict(
         size=11, 
-        color=timesteps,
-        colorscale='Sunset',
-        colorbar=dict(title="Time step")
+        color=seq_pred
+        # size=11, 
+        # color=timesteps,
+        # colorscale='Sunset',
+        # colorbar=dict(title="Time step")
     ),
+    text = [f'Time step {t+1}, Predicted label {seq_pred[t]}' for t in timesteps],
+    hoverinfo='text',
     line=dict(color='red', width=1),
     name=f"Sequence {seq_id}"
 ))
@@ -212,8 +221,8 @@ fig.update_layout(
     yaxis_title="PC2"
 )
 print(f"Plotted in {time.time()-start:.4f} seconds.")
-fig.write_image('/projects/expmmllab/LSTMcx/graphs/ct.png')
-fig.write_html('/projects/expmmllab/LSTMcx/graphs/ct.html')
+fig.write_image('/projects/expmmllab/LSTMcx/graphs/mct.png')
+fig.write_html('/projects/expmmllab/LSTMcx/graphs/mct.html')
 print("Cell state trajectory saved :)")
 
 
@@ -228,15 +237,19 @@ fig = go.Figure(data=[go.Scatter3d(
     y=ht3_pca[:,1],
     z=ht3_pca[:,2],
     mode='lines+markers',
-    text=[f'Time step {t+1}' for t in timesteps],
-    hoverinfo='text',
+    # text=[f'Time step {t+1}' for t in timesteps],
+    # hoverinfo='text',
     marker=dict(
-        size=7, 
-        color=timesteps,
-        colorscale='Viridis',
-        colorbar=dict(title="Time step"),
+        size=11, 
+        color=seq_pred,
+        # size=7, 
+        # color=timesteps,
+        # colorscale='Viridis',
+        # colorbar=dict(title="Time step"),
         opacity=0.8
     ),
+    text = [f'Time step {t+1}, Predicted label {seq_pred[t]}' for t in timesteps],
+    hoverinfo='text',
     line=dict(color='blue', width=1),
     name=f"Sequence {seq_id}"
 )])
@@ -247,12 +260,12 @@ fig.update_layout(
     yaxis_title="PC2"
 )
 print(f"Plotted in {time.time()-start:.4f} seconds.")
-fig.write_image('/projects/expmmllab/LSTMcx/graphs/3dht.png')
-fig.write_html('/projects/expmmllab/LSTMcx/graphs/3dht.html')
+fig.write_image('/projects/expmmllab/LSTMcx/graphs/mht3d.png')
+fig.write_html('/projects/expmmllab/LSTMcx/graphs/mht3d.html')
 print("3D hidden state trajectory saved :)")
 
 
-"""3D Individual Sequence Hidden State Trajectory"""
+"""3D Individual Sequence Cell State Trajectory"""
 pca = PCA(n_components=3)
 ct3_pca = pca.fit_transform(seq_cell)   
 #3D plotting
@@ -263,15 +276,19 @@ fig = go.Figure(data=[go.Scatter3d(
     y=ct3_pca[:,1],
     z=ct3_pca[:,2],
     mode='lines+markers',
-    text=[f'Time step {t+1}' for t in timesteps],
-    hoverinfo='text',
+    # text=[f'Time step {t+1}' for t in timesteps],
+    # hoverinfo='text',
     marker=dict(
-        size=7, 
-        color=timesteps,
-        colorscale='Sunset',
-        colorbar=dict(title="Time step"),
+        size=11, 
+        color=seq_pred,
+        # size=7, 
+        # color=timesteps,
+        # colorscale='Sunset',
+        # colorbar=dict(title="Time step"),
         opacity=0.8
     ),
+    text = [f'Time step {t+1}, Predicted label {seq_pred[t]}' for t in timesteps],
+    hoverinfo='text',
     line=dict(color='red', width=1),
     name=f"Sequence {seq_id}"
 )])
@@ -282,8 +299,8 @@ fig.update_layout(
     yaxis_title="PC2"
 )
 print(f"Plotted in {time.time()-start:.4f} seconds.")
-fig.write_image('/projects/expmmllab/LSTMcx/graphs/3dct.png')
-fig.write_html('/projects/expmmllab/LSTMcx/graphs/3dct.html')
+fig.write_image('/projects/expmmllab/LSTMcx/graphs/mct3d.png')
+fig.write_html('/projects/expmmllab/LSTMcx/graphs/mct3d.html')
 print("3D cell state trajectory saved :)")
 
 
@@ -298,8 +315,6 @@ print(pca.explained_variance_ratio_)        #debugging
 
 #assuming: hidden_pca is shape (N, 2), y is shape (N,)
 fig = go.Figure()
-
-unique_labels = sorted(set(y))
 colors = px.colors.qualitative.T10
 
 #one scatter trace per label class
@@ -318,11 +333,9 @@ fig.update_layout(
     xaxis_title="PC1",
     yaxis_title="PC2",
     legend_title="Classes",
-    width=800,
-    height=600
 )
-fig.write_image("/projects/expmmllab/LSTMcx/graphs/hPCA.png")
-fig.write_html("/projects/expmmllab/LSTMcx/graphs/hPCA.html")
+fig.write_image("/projects/expmmllab/LSTMcx/graphs/mhPCA.png")
+fig.write_html("/projects/expmmllab/LSTMcx/graphs/mhPCA.html")
 print("PCA plot saved :)")
 
 #debugging more
@@ -331,7 +344,169 @@ mean_var = var_per_time.mean().item()
 print(f"Avg variance across time (per neuron): {mean_var:.6f}")
 
 
+"""3D scatterplot graphing"""
+#pca
+print("Starting PCA...")
+start = time.time()
+pca = PCA(n_components=3)
+hs3_pca = pca.fit_transform(X)     #fits model and applies dimensionality reduction to X
+print(f"PCA took {time.time()-start:.4f} seconds.")
+print(pca.explained_variance_ratio_)        #debugging
+
+fig = go.Figure()
+colors = px.colors.qualitative.T10
+
+#one scatter trace per label class
+for i, label in enumerate(unique_labels):
+    mask = y == label
+    fig.add_trace(go.Scatter3d(
+        x=hs3_pca[mask, 0],
+        y=hs3_pca[mask, 1],
+        z=hs3_pca[mask, 2],
+        mode='markers',
+        name=f"{label}",
+        marker=dict(color=colors[i % len(colors)], size=6, line=dict(width=0.5, color='black'))
+    ))
+
+fig.update_layout(
+    title="3D PCA of Hidden States",
+    xaxis_title="PC1",
+    yaxis_title="PC2",
+    legend_title="Classes",
+)
+fig.write_image("/projects/expmmllab/LSTMcx/graphs/mh3dPCA.png")
+fig.write_html("/projects/expmmllab/LSTMcx/graphs/mh3dPCA.html")
+print("PCA plot saved :)")
+
+"""3D scatterplot graphing"""
+#pca
+print("Starting PCA...")
+start = time.time()
+pca = PCA(n_components=3)
+cs3_pca = pca.fit_transform(Y)     #fits model and applies dimensionality reduction to X
+print(f"PCA took {time.time()-start:.4f} seconds.")
+print(pca.explained_variance_ratio_)        #debugging
+
+fig = go.Figure()
+colors = px.colors.qualitative.T10
+
+#one scatter trace per label class
+for i, label in enumerate(unique_labels):
+    mask = y == label
+    fig.add_trace(go.Scatter3d(
+        x=cs3_pca[mask, 0],
+        y=cs3_pca[mask, 1],
+        z=cs3_pca[mask, 2],
+        mode='markers',
+        name=f"{label}",
+        marker=dict(color=colors[i % len(colors)], size=6, line=dict(width=0.5, color='black'))
+    ))
+
+fig.update_layout(
+    title="3D PCA of Cell States",
+    xaxis_title="PC1",
+    yaxis_title="PC2",
+    legend_title="Classes",
+)
+fig.write_image("/projects/expmmllab/LSTMcx/graphs/mc3dPCA.png")
+fig.write_html("/projects/expmmllab/LSTMcx/graphs/mc3dPCA.html")
+print("PCA plot saved :)")
+
+
+
+"""Testing cell state PCA"""
+#pca
+print("Starting PCA...")
+start = time.time()
+pca = PCA(n_components=2)
+Y_pca = pca.fit_transform(Y)     #fits model and applies dimensionality reduction to Y
+print(f"PCA took {time.time()-start:.4f} seconds.")
+print(pca.explained_variance_ratio_)        #debugging
+
+#assuming shape (N, 2), y is shape (N,)
+fig = go.Figure()
+colors = px.colors.qualitative.T10
+
+#one scatter trace per label class
+for i, label in enumerate(unique_labels):
+    mask = y == label
+    fig.add_trace(go.Scatter(
+        x=Y_pca[mask, 0],
+        y=Y_pca[mask, 1],
+        mode='markers',
+        name=f"{label}",
+        marker=dict(color=colors[i % len(colors)], size=6, line=dict(width=0.5, color='black'))
+    ))
+
+fig.update_layout(
+    title="2D PCA of Cell States",
+    xaxis_title="PC1",
+    yaxis_title="PC2",
+    legend_title="Classes",
+)
+fig.write_image("/projects/expmmllab/LSTMcx/graphs/mcPCA.png")
+fig.write_html("/projects/expmmllab/LSTMcx/graphs/mcPCA.html")
+print("PCA plot saved :)")
+
+
+#get pc
+pca0 = hs3_pca[:, 0]
+pca1 = hs3_pca[:, 1]
+pca2 = hs3_pca[:, 2]
+
+print(f"PCA 0 is {pca0}")
+print(f"PCA 1 is {pca1}")
+print(f"PCA 2 is {pca2}")
+
+print("Building dataframe...")
+start = time.time()
+df = pd.DataFrame({'PC0': pca0, 
+                  'PCA1': pca1, 
+                  'PCA2': pca2, 
+                  'labels': y
+                  })
+print(f"Built dataframe in {time.time() - start} seconds.")
+
+#print(df['labels']) #debugging
+
+df.to_csv("/projects/expmmllab/LSTMcx/logs/mhiddenpc.csv", index=False)
+
+
+#get pc
+pca0 = cs3_pca[:, 0]
+pca1 = cs3_pca[:, 1]
+pca2 = cs3_pca[:, 2]
+
+print(f"PCA 0 is {pca0}")
+print(f"PCA 1 is {pca1}")
+print(f"PCA 2 is {pca2}")
+
+print("Building dataframe...")
+start = time.time()
+df = pd.DataFrame({'PC0': pca0, 
+                  'PCA1': pca1, 
+                  'PCA2': pca2, 
+                  'labels': y
+                  })
+print(f"Built dataframe in {time.time() - start} seconds.")
+
+print(df['labels']) #debugging
+
+df.to_csv("/projects/expmmllab/LSTMcx/logs/mcellpc.csv", index=False)
+
+
+X = np.array(X, dtype=np.float32)  # Shape: (N, hidden_dim)
+X -= np.mean(X, axis=0)
+print("Shape of hidden states:", X.shape)
+cov_matrix = np.cov(X, rowvar=False)
+print("Covariance matrix shape:", cov_matrix.shape)
+eigenvalues = np.linalg.eigvals(cov_matrix)
+eigenvalues = np.sort(eigenvalues)[::-1]
+
+print("Top 10 eigenvalues:")
+print(eigenvalues[:10])
+
 """Request gpus"""
-#srun --gres=gpu:1 --time=02:00:00 --pty bash   
+#srun --gres=gpu:1 --time=06:00:00 --pty bash   
 #nvidia-smi
-#python /projects/expmmllab/LSTMcx/mLSTM_getstates.py
+#python /CoxeterArtinProject/lstm/mLSTM_getstates.py
