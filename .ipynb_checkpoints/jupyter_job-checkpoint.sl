@@ -20,7 +20,7 @@
 
 # get notifications 
 #SBATCH --mail-type=BEGIN,END,FAIL      # Mail events (NONE, BEGIN, END, FAIL, ALL)
-##SBATCH --mail-user=grigsbyj@bc.edu	    # Email for notifications (can include multiple comma-separated e-mail addresses no spaces)
+##SBATCH --mail-user=grigsbyj@bc.edu	    # Email for notifications
 
 ###########################
 ### End of SLURM params ###
