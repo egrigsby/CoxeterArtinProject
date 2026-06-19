@@ -32,9 +32,11 @@ from transformers import get_cosine_schedule_with_warmup
 from torch.nn.utils import clip_grad_norm_
 
 import transformer_lens
-import transformer_lens.utils as utils
-from transformer_lens.hook_points import HookedRootModule, HookPoint
+from transformer_lens import HookedRootModule
+import transformer_lens.utilities as utils
+from transformer_lens.hook_points import HookPoint
 from transformer_lens import HookedTransformer, HookedTransformerConfig, FactoredMatrix, ActivationCache
+import transformer_lens.config.hooked_transformer_config as htc
 
 import plotly.io as pio
 import matplotlib.pyplot as plt
@@ -138,7 +140,7 @@ frac_train = 0.4
 num_epochs = 25000
 checkpoint_every = 100
 
-cfg = HookedTransformerConfig(
+cfg = htc.HookedTransformerConfig(
     n_ctx=22,
     n_layers=1,
     n_heads=4,
