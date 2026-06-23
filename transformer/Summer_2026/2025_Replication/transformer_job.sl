@@ -12,7 +12,7 @@
 
 # GPU specifications
 #SBATCH --partition=short                   # specify partition (interactive, short, medium, long)
-#SBATCH --gres=gpu:a100:1                   # gpu:<gpu type>:<number of gpus to use in node>
+#SBATCH --gres=gpu:a100:2                   # gpu:<gpu type>:<number of gpus to use in node>
 
 # get notifications
 #SBATCH --mail-type=BEGIN,END,FAIL
