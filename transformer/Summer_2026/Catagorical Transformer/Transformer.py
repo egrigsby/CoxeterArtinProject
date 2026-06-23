@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 
 TRAIN_MODEL = True   # if False, skip training
-LOAD_MODEL  = True  
+LOAD_MODEL  = False  
 
 # if LOAD_MODEL = True, loads from PTH_LOCATION to continue training, 
 # and the loop always restarts from epoch = 0 and runs the full num_epochs again.
@@ -12,6 +12,17 @@ LOAD_MODEL  = True
 # Model Configuration
 # ---------------------------------------------------------------------------
 
+# Set Randomization
+DATA_SEED = 598
+
+# Train/Test Split (unused)
+TRAINING_SPLIT = 0.4
+
+# --- Training Loop Config ---
+NUM_EPOCHS = 25000
+CHECKPOINT_STEP = 100
+
+# --- Transformer Config ---
 SEQUENCE_LENGTH=22,                     # fixed sequence length (size of an input)
 LAYERS=1,
 HEADS=4,
@@ -19,17 +30,21 @@ DIM_HEADS=64,
 DIM_MODEL=256,                          # nHeads * dHeads
 DIM_MLP=256,                            # d_model * 4 (recommended)
 TOKEN_TYPES=5,                          # token types = numOfGens + 1Padding + 1 mask?
-DIM_OUTPUT=2,                           # Output types
+DIM_OUTPUT=3,                           # Output types
 TYPE="relu",                            # breaks linearization
 INIT_WEIGHTS=True,
 #DEVICE=device,
 NUM_DEVICES=1,
-#seed=LENS_SEED,
+LENS_SEED = 999,
 ATTENTION_DIRECTION="bidirectional",    # bidirectional/causal
 NORMALIZATION=None,                     # None, LN, LNPre, RMS, RMSPre
 
-NUM_EPOCHS = 25000
-CHECKPOINT_STEP = 100
+# --- Optimizer Config --- 
+# NOTE: a small learning rate (lr) is recommended for more complex models to avoid massive jumps, a schdeuler is likely necessary for >1 transformer layer
+LEARNING_RATE = 1e-5
+WEIGHT_DECAY = 7
+BETAS = (0.9, 0.98)
+PATIENCE= 20
 
 # ---------------------------------------------------------------------------
 # General Libraries
@@ -86,15 +101,18 @@ subprocess.run(["nvidia-smi"])
 # Config
 # ---------------------------------------------------------------------------
 
-DATA_SEED = 598
-LENS_SEED = 999
+# Set Randomization
 torch.manual_seed(seed=DATA_SEED)
 torch.cuda.manual_seed_all(DATA_SEED)
 
+# --- Training Loop Config ---
 num_epochs = NUM_EPOCHS
 checkpoint_every = CHECKPOINT_STEP
-frac_train = 0.4
 
+# Train/Test Split (unused)
+frac_train = TRAINING_SPLIT
+
+# --- Transformer Config ---
 cfg = HookedTransformerConfig(
     n_ctx=SEQUENCE_LENGTH,
     n_layers=LAYERS,
@@ -118,10 +136,15 @@ if LOAD_MODEL:
     cached_data = torch.load(PTH_LOCATION, weights_only=False)
     cfg = cached_data["config"]
 
-lr = 1e-5
-wd = 7
-betas = (0.9, 0.98)
-patience = 20
+# --- Optimizer Config --- 
+# NOTE: a small learning rate (lr) is recommended for more complex models to avoid massive jumps, a schdeuler is likely necessary for >1 transformer layer
+lr = LEARNING_RATE
+wd = WEIGHT_DECAY
+betas = BETAS
+patience = PATIENCE
+
+# --- Schedueler Config --- 
+# warmup_steps = (int) (num_epochs * 0.1)
 
 # ---------------------------------------------------------------------------
 # Model and Optimizer
@@ -160,29 +183,39 @@ else:
 
 clsDex = 0  # index of CLS token, the token to be decoded (first token)
 
-# returns scalar representing performance in the whole batch
-def loss_fn(logits, labels):
-    # get (batches, logits) for all last tokens in all batches
-    if len(logits.shape)==3:
-        logits = logits[:, clsDex]
-    logits = logits.to(torch.float64)
-    labels = labels.to(logits.device)   # Move labels to the same device as logits
-    labels = labels.unsqueeze(1)        # (batch size, 1) turned into appropriate shape
-    # logits shape: (batch, # of classes)       # focus on last dimension of logits, which is the list of classes (0 or 1), get index based probability
-    log_probs = logits.log_softmax(dim=-1)      # turn logits/last dimension (per sequence) into a prob distrib (then logs it)
-    correct_log_probs = log_probs.gather(dim=-1, index=labels).squeeze(1)   # squeeze removes single dimension, so now list of size batches
-    return -correct_log_probs.mean()
+def autoregressive_loss_fn(logits, tokens, padding_token=0):
+    """
+    Grades the model at every single step (predicting descents and next characters)
+    while ignoring empty padding at the end of the sequence.
+    """
+    # 1. Standard autoregressive shift alignment
+    shift_logits = logits[:, :-1, :].contiguous()
+    shift_labels = tokens[:, 1:].contiguous()
+    
+    # 2. Compute cross-entropy, ignoring padding positions
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=padding_token)
+    
+    flat_logits = shift_logits.view(-1, shift_logits.size(-1))
+    flat_labels = shift_labels.view(-1)
+    
+    return loss_fn(flat_logits, flat_labels)
 
-# NOTE item() used for final output of accuracy and not scalar because, loss needs to run backward while accuracy can just be stored
-
-#returns scalar representing combined percent scores (performance) of model
-def accuracy_fn(logits, labels):
-    if len(logits.shape) == 3:
-        logits = logits[:, clsDex]
-    labels = labels.to(logits.device) # Move labels to the same device as logits
-    # get index of largest num in 2d logit, for all sequences, then compare with label
-    preds = logits.argmax(dim=-1)
-    return (preds == labels).float().mean().item()
+def autoregressive_accuracy_fn(logits, tokens, padding_token=0):
+    """
+    Calculates the exact matching percentage of the model's predictions,
+    ignoring padding tokens.
+    """
+    shift_logits = logits[:, :-1, :].contiguous()
+    shift_labels = tokens[:, 1:].contiguous()
+    
+    # Get the token ID with the highest probability prediction
+    predictions = torch.argmax(shift_logits, dim=-1)
+    
+    # Track correct matches where the target isn't padding
+    correct = (predictions == shift_labels).float()
+    valid_mask = (shift_labels != padding_token).float()
+    
+    return (correct * valid_mask).sum() / valid_mask.sum()
 
 # ---------------------------------------------------------------------------
 # Attention Masking
@@ -213,19 +246,33 @@ def register_pad_mask_hook(model, attention_mask):
 # Dataset Loading
 # ---------------------------------------------------------------------------
 
-def load_dataset_from_csv(file_path):
-    df = pd.read_csv(file_path, names=['tokens', 'label'], skiprows=1)
-    df['tokens'] = df['tokens'].apply(lambda x: [int(i.strip(" '")) for i in x.strip("[]").split(",")])
-    words = [torch.tensor(seq) for seq in df['tokens']]
-    labels = torch.tensor(df['label'].values)
-    return torch.stack(words), labels
+def load_interleaved_dataset(csv_path):
+    """
+    Loads your custom Strategy B CSV file where words and descents 
+    are already interleaved, and converts them into a 2D PyTorch tensor.
+    """
+    # 1. Read the CSV file (assumes no header row, just rows of numbers)
+    df = pd.read_csv(csv_path, header=None)
+    
+    # 2. Convert the dataframe values directly into a long integer tensor
+    data_tensor = torch.tensor(df.values, dtype=torch.long)
+    
+    print(f"Loaded dataset shape: {data_tensor.shape}") # Expecting [Batch_Size, Sequence_Length]
+    return data_tensor
 
-def write_dataset_to_csv(file_path, data, labels):
-    data_list = data.tolist()
-    label_list = labels.tolist()
-    formatted_tokens = [str([str(token) for token in seq]) for seq in data_list]
-    df = pd.DataFrame({'tokens': formatted_tokens, 'label': label_list})
-    df.to_csv(file_path, index=False, header=True)
+def write_dataset_to_csv(file_path, data_tensor):
+    """
+    Saves a 2D PyTorch tensor of tokens back into a raw grid CSV file
+    that load_interleaved_dataset can seamlessly read later.
+    """
+    # 1. Move the tensor to CPU and convert it back to a numpy array/dataframe
+    if isinstance(data_tensor, torch.Tensor):
+        df = pd.DataFrame(data_tensor.detach().cpu().numpy())
+    else:
+        df = pd.DataFrame(data_tensor)
+        
+    # 2. Save without a header row and without the row index numbers
+    df.to_csv(file_path, index=False, header=False)
 
 reservedFiles = {
     "test": "test.csv",
@@ -234,15 +281,15 @@ reservedFiles = {
 }
 reservedFilesL = list(reservedFiles.values())
 
-test_data, test_labels = load_dataset_from_csv(DATA_PATH / reservedFiles["test"])
+test_data, test_labels = load_interleaved_dataset(DATA_PATH / reservedFiles["test"])
 
 USE_TRAIN_CSV = True
 
 if USE_TRAIN_CSV:
-    train_data, train_labels = load_dataset_from_csv(DATA_PATH / reservedFiles["train"])
+    train_data, train_labels = load_interleaved_dataset(DATA_PATH / reservedFiles["train"])
 else:
     all_datasets = {}
-    relators_data, relators_labels = load_dataset_from_csv(DATA_PATH / reservedFiles["relators"])
+    relators_data, relators_labels = load_interleaved_dataset(DATA_PATH / reservedFiles["relators"])
 
     fileNames = sorted(
         [f for f in os.listdir(DATA_PATH) if f.endswith(".csv") and f not in reservedFilesL],
@@ -251,7 +298,7 @@ else:
 
     all_datasets["relators"] = (relators_data, relators_labels)
     for fileName in fileNames:
-        all_datasets[fileName.replace(".csv", "")] = load_dataset_from_csv(DATA_PATH / fileName)
+        all_datasets[fileName.replace(".csv", "")] = load_interleaved_dataset(DATA_PATH / fileName)
 
     print("Loaded datasets:")
     for name, (data, labels) in all_datasets.items():
@@ -303,7 +350,7 @@ if TRAIN_MODEL:
 
         # ---- Forward pass ----
         train_logits = model(train_data)
-        train_loss = loss_fn(train_logits, train_labels)
+        train_loss = autoregressive_accuracy_fn(train_logits, train_labels)
         train_loss.backward()
         train_losses.append(train_loss.item())
 
@@ -311,7 +358,7 @@ if TRAIN_MODEL:
         #clip_grad_norm_(model.parameters(), max_norm=3.0)
 
         # ---- Accuracy (train) ----
-        train_accuracy = accuracy_fn(train_logits, train_labels)
+        train_accuracy = autoregressive_accuracy_fn(train_logits, train_labels)
         train_accuracies.append(train_accuracy)
 
         # ---- Optimizer + Scheduler step ----
@@ -327,11 +374,11 @@ if TRAIN_MODEL:
 
             # ---- Forward pass (test) ----
             test_logits = model(test_data)
-            test_loss = loss_fn(test_logits, test_labels)
+            test_loss = autoregressive_loss_fn(test_logits, test_labels)
             test_losses.append(test_loss.item())
 
             # ---- Accuracy (test) ----
-            test_accuracy = accuracy_fn(test_logits,test_labels)
+            test_accuracy = autoregressive_accuracy_fn(test_logits,test_labels)
             test_accuracies.append(test_accuracy)
 
         # ---- Checkpoint ----
