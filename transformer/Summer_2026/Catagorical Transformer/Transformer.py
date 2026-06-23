@@ -1,50 +1,4 @@
-# ---------------------------------------------------------------------------
-# Boolean Modes
-# ---------------------------------------------------------------------------
-
-TRAIN_MODEL = True   # if False, skip training
-LOAD_MODEL  = False  
-
-# if LOAD_MODEL = True, loads from PTH_LOCATION to continue training, 
-# and the loop always restarts from epoch = 0 and runs the full num_epochs again.
-
-# ---------------------------------------------------------------------------
-# Model Configuration
-# ---------------------------------------------------------------------------
-
-# Set Randomization
-DATA_SEED = 598
-
-# Train/Test Split (unused)
-TRAINING_SPLIT = 0.4
-
-# --- Training Loop Config ---
-NUM_EPOCHS = 25000
-CHECKPOINT_STEP = 100
-
-# --- Transformer Config ---
-SEQUENCE_LENGTH=22,                     # fixed sequence length (size of an input)
-LAYERS=1,
-HEADS=4,
-DIM_HEADS=64,
-DIM_MODEL=256,                          # nHeads * dHeads
-DIM_MLP=256,                            # d_model * 4 (recommended)
-TOKEN_TYPES=5,                          # token types = numOfGens + 1Padding + 1 mask?
-DIM_OUTPUT=3,                           # Output types
-TYPE="relu",                            # breaks linearization
-INIT_WEIGHTS=True,
-#DEVICE=device,
-NUM_DEVICES=1,
-LENS_SEED = 999,
-ATTENTION_DIRECTION="bidirectional",    # bidirectional/causal
-NORMALIZATION=None,                     # None, LN, LNPre, RMS, RMSPre
-
-# --- Optimizer Config --- 
-# NOTE: a small learning rate (lr) is recommended for more complex models to avoid massive jumps, a schdeuler is likely necessary for >1 transformer layer
-LEARNING_RATE = 1e-5
-WEIGHT_DECAY = 7
-BETAS = (0.9, 0.98)
-PATIENCE= 20
+from config import *
 
 # ---------------------------------------------------------------------------
 # General Libraries
@@ -64,15 +18,6 @@ import pandas as pd
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from transformer_lens import HookedTransformer, HookedTransformerConfig
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-
-directory = os.path.dirname(os.path.abspath(__file__))
-
-DATA_PATH = Path(directory)
-
-PTH_LOCATION = os.path.join(directory, "workspace/_scratch/model.pth")
 os.makedirs(Path(PTH_LOCATION).parent, exist_ok=True)
 
 # ---------------------------------------------------------------------------
@@ -109,8 +54,8 @@ torch.cuda.manual_seed_all(DATA_SEED)
 num_epochs = NUM_EPOCHS
 checkpoint_every = CHECKPOINT_STEP
 
-# Train/Test Split (unused)
 frac_train = TRAINING_SPLIT
+data_csv = DATA_CSV
 
 # --- Transformer Config ---
 cfg = HookedTransformerConfig(
@@ -181,7 +126,7 @@ else:
 # Loss and Accuracy
 # ---------------------------------------------------------------------------
 
-clsDex = 0  # index of CLS token, the token to be decoded (first token)
+#clsDex = 0  # index of CLS token, the token to be decoded (first token)
 
 def autoregressive_loss_fn(logits, tokens, padding_token=0):
     """
@@ -248,170 +193,128 @@ def register_pad_mask_hook(model, attention_mask):
 
 def load_interleaved_dataset(csv_path):
     """
-    Loads your custom Strategy B CSV file where words and descents 
-    are already interleaved, and converts them into a 2D PyTorch tensor.
+    Loads a CSV file where words and descents are already interleaved,
+    and converts them into a 2D PyTorch tensor.
     """
-    # 1. Read the CSV file (assumes no header row, just rows of numbers)
+    # Read the CSV file (assumes no header row, just rows of numbers)
     df = pd.read_csv(csv_path, header=None)
-    
-    # 2. Convert the dataframe values directly into a long integer tensor
+
+    # Convert the dataframe values directly into a long integer tensor
     data_tensor = torch.tensor(df.values, dtype=torch.long)
-    
+
     print(f"Loaded dataset shape: {data_tensor.shape}") # Expecting [Batch_Size, Sequence_Length]
     return data_tensor
 
+# Why is this here
 def write_dataset_to_csv(file_path, data_tensor):
     """
     Saves a 2D PyTorch tensor of tokens back into a raw grid CSV file
     that load_interleaved_dataset can seamlessly read later.
     """
-    # 1. Move the tensor to CPU and convert it back to a numpy array/dataframe
+    # Move the tensor to CPU and convert it back to a numpy array/dataframe
     if isinstance(data_tensor, torch.Tensor):
         df = pd.DataFrame(data_tensor.detach().cpu().numpy())
     else:
         df = pd.DataFrame(data_tensor)
-        
-    # 2. Save without a header row and without the row index numbers
+
+    # Save without a header row and without the row index numbers
     df.to_csv(file_path, index=False, header=False)
 
-reservedFiles = {
-    "test": "test.csv",
-    "train": "train.csv",
-    "relators": "relators.csv"
-}
-reservedFilesL = list(reservedFiles.values())
+# Load the single dataset and shuffle
+all_data = load_interleaved_dataset(DATA_PATH / data_csv)
 
-test_data, test_labels = load_interleaved_dataset(DATA_PATH / reservedFiles["test"])
+perm = torch.randperm(all_data.size(0))
+all_data = all_data[perm]
 
-USE_TRAIN_CSV = True
+# Split into train and test using frac_train
+n_train = int(frac_train * all_data.size(0))
+train_data = all_data[:n_train]
+test_data  = all_data[n_train:]
 
-if USE_TRAIN_CSV:
-    train_data, train_labels = load_interleaved_dataset(DATA_PATH / reservedFiles["train"])
-else:
-    all_datasets = {}
-    relators_data, relators_labels = load_interleaved_dataset(DATA_PATH / reservedFiles["relators"])
-
-    fileNames = sorted(
-        [f for f in os.listdir(DATA_PATH) if f.endswith(".csv") and f not in reservedFilesL],
-        key=lambda name: int(name.split('-')[0])
-    )
-
-    all_datasets["relators"] = (relators_data, relators_labels)
-    for fileName in fileNames:
-        all_datasets[fileName.replace(".csv", "")] = load_interleaved_dataset(DATA_PATH / fileName)
-
-    print("Loaded datasets:")
-    for name, (data, labels) in all_datasets.items():
-        print(f"  {name}: {data.shape} words, {labels.shape} labels")
-
-    train_data = torch.cat([d for d, _ in all_datasets.values()], dim=0)
-    train_labels = torch.cat([l for _, l in all_datasets.values()], dim=0)
-    write_dataset_to_csv(DATA_PATH / reservedFiles["train"], train_data, train_labels)
-
-tPerm = torch.randperm(train_data.size(0))
-
-train_data = train_data[tPerm]
-train_labels = train_labels[tPerm].to(device1)
-
-# Nanda uses one dataset. frac train for training and the rest for testing
-# n_train = int(frac_train * train_data.size(0)) 
-# train_data = train_data[:n_train]
-# train_labels = train_labels[:n_train]
-
-print(f"Batch Size: {train_data.shape[0]} | Seq Len: {train_data.shape[1]}")
+print(f"Train size: {train_data.shape[0]} | Test size: {test_data.shape[0]} | Seq Len: {train_data.shape[1]}")
 
 # ---------------------------------------------------------------------------
 # Move to Device and Create Masks
 # ---------------------------------------------------------------------------
 
-test_data = test_data.to(device1)
-test_labels = test_labels.to(device1)
+train_data = train_data.to(device1)
+test_data  = test_data.to(device1)
 
-test_attention_mask = create_attention_mask(test_data).to(device1)
 train_attention_mask = create_attention_mask(train_data).to(device1)
-
-ALTERNATE_TRAINING = False
-if not USE_TRAIN_CSV and ALTERNATE_TRAINING:
-    for name in all_datasets:
-        data, labels = all_datasets[name]
-        all_datasets[name] = (data.to(device1), labels.to(device1))
+test_attention_mask  = create_attention_mask(test_data).to(device1)
 
 # ---------------------------------------------------------------------------
 # Training
 # ---------------------------------------------------------------------------
 
-#num_epochs = 100   # num_epochs    (debug, keep commented out)
+for epoch in tqdm.tqdm(range(num_epochs)):
+    # ---- Register hook for train ----
+    model.reset_hooks()
+    register_pad_mask_hook(model, train_attention_mask)
 
-if TRAIN_MODEL:
-    for epoch in tqdm.tqdm(range(num_epochs)):
-        # ---- Register hook for train ----
+    # ---- Forward pass ----
+    train_logits = model(train_data)
+    train_loss = autoregressive_accuracy_fn(train_logits, train_data)
+    train_loss.backward()
+    train_losses.append(train_loss.item())
+
+    # --- Gradient Clipping ---
+    #clip_grad_norm_(model.parameters(), max_norm=3.0)
+
+    # ---- Accuracy (train) ----
+    train_accuracy = autoregressive_accuracy_fn(train_logits, train_data)
+    train_accuracies.append(train_accuracy)
+
+    # ---- Optimizer + Scheduler step ----
+    optimizer.step()
+    #scheduler.step()           # do with mini batches of data
+    optimizer.zero_grad()
+    
+    # ---- Evaluation ----
+    with torch.inference_mode():
+        # Add Attention Masking Hook:
         model.reset_hooks()
-        register_pad_mask_hook(model, train_attention_mask)
+        register_pad_mask_hook(model, test_attention_mask)
 
-        # ---- Forward pass ----
-        train_logits = model(train_data)
-        train_loss = autoregressive_accuracy_fn(train_logits, train_labels)
-        train_loss.backward()
-        train_losses.append(train_loss.item())
+        # ---- Forward pass (test) ----
+        test_logits = model(test_data)
+        test_loss = autoregressive_loss_fn(test_logits, test_data)
+        test_losses.append(test_loss.item())
 
-        # --- Gradient Clipping ---
-        #clip_grad_norm_(model.parameters(), max_norm=3.0)
+        # ---- Accuracy (test) ----
+        test_accuracy = autoregressive_accuracy_fn(test_logits,test_data)
+        test_accuracies.append(test_accuracy)
 
-        # ---- Accuracy (train) ----
-        train_accuracy = autoregressive_accuracy_fn(train_logits, train_labels)
-        train_accuracies.append(train_accuracy)
-
-        # ---- Optimizer + Scheduler step ----
-        optimizer.step()
-        #scheduler.step()           # do with mini batches of data
-        optimizer.zero_grad()
-        
-        # ---- Evaluation ----
-        with torch.inference_mode():
-            # Add Attention Masking Hook:
-            model.reset_hooks()
-            register_pad_mask_hook(model, test_attention_mask)
-
-            # ---- Forward pass (test) ----
-            test_logits = model(test_data)
-            test_loss = autoregressive_loss_fn(test_logits, test_labels)
-            test_losses.append(test_loss.item())
-
-            # ---- Accuracy (test) ----
-            test_accuracy = autoregressive_accuracy_fn(test_logits,test_labels)
-            test_accuracies.append(test_accuracy)
-
-        # ---- Checkpoint ----
-        if ((epoch + 1) % checkpoint_every) == 0:
-            checkpoint_epochs.append(epoch)
-            # Save model’s weights (not model)
-            model_checkpoints.append(copy.deepcopy(model.state_dict()))
-            print(
-                f"Epoch {epoch} | "
-                f"Train Loss: {train_loss.item():.4f} | "
-                f"Test Loss: {test_loss.item():.4f} | "
-                f"Train Acc: {train_accuracy:.4f} | "
-                f"Test Acc: {test_accuracy:.4f}"
-            )
+    # ---- Checkpoint ----
+    if ((epoch + 1) % checkpoint_every) == 0:
+        checkpoint_epochs.append(epoch)
+        # Save model’s weights (not model)
+        model_checkpoints.append(copy.deepcopy(model.state_dict()))
+        print(
+            f"Epoch {epoch} | "
+            f"Train Loss: {train_loss.item():.4f} | "
+            f"Test Loss: {test_loss.item():.4f} | "
+            f"Train Acc: {train_accuracy:.4f} | "
+            f"Test Acc: {test_accuracy:.4f}"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Save / Load Model
 # ---------------------------------------------------------------------------
 
-if TRAIN_MODEL:
-    torch.save(
-        {
-            "config": model.cfg,
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "scheduler": scheduler.state_dict(),
-            "checkpoints": model_checkpoints,
-            "checkpoint_epochs": checkpoint_epochs,
-            "test_losses": test_losses,
-            "train_losses": train_losses,
-            "train_accuracies": train_accuracies,
-            "test_accuracies": test_accuracies,
-        },
-        PTH_LOCATION,
-    )
+torch.save(
+    {
+        "config": model.cfg,
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scheduler": scheduler.state_dict(),
+        "checkpoints": model_checkpoints,
+        "checkpoint_epochs": checkpoint_epochs,
+        "test_losses": test_losses,
+        "train_losses": train_losses,
+        "train_accuracies": train_accuracies,
+        "test_accuracies": test_accuracies,
+    },
+    PTH_LOCATION,
+)
