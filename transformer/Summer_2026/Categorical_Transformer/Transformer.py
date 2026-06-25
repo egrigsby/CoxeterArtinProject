@@ -19,111 +19,6 @@ import ast
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from transformer_lens import HookedTransformer, HookedTransformerConfig
 
-os.makedirs(Path(PTH_LOCATION).parent, exist_ok=True)
-
-# ---------------------------------------------------------------------------
-# GPU Setup
-# ---------------------------------------------------------------------------
-
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128,expandable_segments:True"
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
-
-torch.cuda.set_per_process_memory_fraction(0.9, device=0)
-torch.cuda.empty_cache()
-
-print(f"CUDA available: {torch.cuda.is_available()}")
-print(f"Device count: {torch.cuda.device_count()}")
-for i in range(torch.cuda.device_count()):
-    print(f"Device {i}: {torch.cuda.get_device_name(i)}")
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Device Name: {device}")
-
-device1 = torch.device("cuda:0") if torch.cuda.is_available() else None
-
-subprocess.run(["nvidia-smi"])
-
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
-# Set Randomization
-torch.manual_seed(seed=DATA_SEED)
-torch.cuda.manual_seed_all(DATA_SEED)
-
-# --- Training Loop Config ---
-num_epochs = NUM_EPOCHS
-checkpoint_every = CHECKPOINT_STEP
-
-frac_train = TRAINING_SPLIT
-data_csv = DATA_CSV
-
-# --- Transformer Config ---
-cfg = HookedTransformerConfig(
-    n_ctx=SEQUENCE_LENGTH,
-    n_layers=LAYERS,
-    n_heads=HEADS,
-    d_head=DIM_HEADS,
-    d_model=DIM_MODEL,
-    d_mlp=DIM_MLP,
-    d_vocab=TOKEN_TYPES,
-    d_vocab_out=DIM_OUTPUT,
-    act_fn=TYPE,
-    init_weights=INIT_WEIGHTS,
-    device=device,
-    n_devices=NUM_DEVICES,
-    seed=LENS_SEED,
-    attention_dir=ATTENTION_DIRECTION,
-    normalization_type=NORMALIZATION,
-    positional_embedding_type=POSITIONAL_EMBEDDING_TYPE,
-)
-
-cached_data = None
-if LOAD_MODEL:
-    cached_data = torch.load(PTH_LOCATION, weights_only=False)
-    cfg = cached_data["config"]
-
-# --- Optimizer Config --- 
-# NOTE: a small learning rate (lr) is recommended for more complex models to avoid massive jumps, a schdeuler is likely necessary for >1 transformer layer
-lr = LEARNING_RATE
-wd = WEIGHT_DECAY
-betas = BETAS
-patience = PATIENCE
-
-# --- Schedueler Config --- 
-# warmup_steps = (int) (num_epochs * 0.1)
-
-# ---------------------------------------------------------------------------
-# Model and Optimizer
-# ---------------------------------------------------------------------------
-
-model = HookedTransformer(cfg)
-optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd, betas=betas)
-scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=patience, factor=0.5)
-
-# Disable biases for interpretability
-for name, param in model.named_parameters():
-    if "b_" in name:
-        param.requires_grad = False
-
-if LOAD_MODEL:
-    model.load_state_dict(cached_data["model"])
-    optimizer.load_state_dict(cached_data["optimizer"])
-    scheduler.load_state_dict(cached_data["scheduler"])
-    model_checkpoints = cached_data["checkpoints"]
-    checkpoint_epochs = cached_data["checkpoint_epochs"]
-    test_losses = cached_data["test_losses"]
-    train_losses = cached_data["train_losses"]
-    train_accuracies = cached_data["train_accuracies"]
-    test_accuracies = cached_data["test_accuracies"]
-else:
-    model_checkpoints = []
-    checkpoint_epochs = []
-    train_losses = []
-    train_accuracies = []
-    test_losses = []
-    test_accuracies = []
-
 # ---------------------------------------------------------------------------
 # Loss and Accuracy
 # ---------------------------------------------------------------------------
@@ -156,6 +51,15 @@ def descent_accuracy_fn(logits, targets, mask):
     m = mask.float()
     return (exact * m).sum() / m.sum()
 
+def descent_sequence_accuracy(logits, targets, mask):
+    """Per-sequence fraction of prefixes with an exactly-correct descent set.
+    Returns shape (batch_size,)."""
+    preds = (logits > 0).float()
+    correct_bits = (preds == targets).float().sum(dim=-1)
+    exact = (correct_bits == logits.size(-1)).float()
+    m = mask.float()
+    return (exact * m).sum(dim=-1) / m.sum(dim=-1).clamp(min=1)
+
 # ---------------------------------------------------------------------------
 # Attention Masking
 # ---------------------------------------------------------------------------
@@ -178,7 +82,7 @@ def register_pad_mask_hook(model, attention_mask):
     def mask_hook(attn_scores, hook):
         return pad_mask_hook(attn_scores, hook, attention_mask)
 
-    for layer in range(cfg.n_layers):
+    for layer in range(model.cfg.n_layers):
         model.blocks[layer].attn.hook_attn_scores.add_hook(mask_hook)
 
 # ---------------------------------------------------------------------------
@@ -213,121 +117,260 @@ def load_descent_dataset(csv_path, n_generators):
     print(f"Loaded dataset: tokens {tuple(tokens.shape)} | targets {tuple(targets.shape)}")
     return tokens, targets, mask
 
-# Why is this here
-def write_dataset_to_csv(file_path, data_tensor):
+
+# ---------------------------------------------------------------------------
+# Setup Factories (shared by Transformer.py training and Analysis.ipynb)
+# ---------------------------------------------------------------------------
+
+def setup_device():
+    """Configure CUDA env/memory and return (device, device1).
+
+    device  : "cuda" or "cpu" (string, for HookedTransformerConfig)
+    device1 : torch.device("cuda:0") or None (for .to(...) calls)
     """
-    Saves a 2D PyTorch tensor of tokens back into a raw grid CSV file
-    that load_interleaved_dataset can seamlessly read later.
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128,expandable_segments:True"
+    os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+
+    if torch.cuda.is_available():
+        torch.cuda.set_per_process_memory_fraction(0.9, device=0)
+        torch.cuda.empty_cache()
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device1 = torch.device("cuda:0") if torch.cuda.is_available() else None
+
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    print(f"Device count: {torch.cuda.device_count()}")
+    for i in range(torch.cuda.device_count()):
+        print(f"Device {i}: {torch.cuda.get_device_name(i)}")
+    print(f"Device Name: {device}")
+
+    return device, device1
+
+
+def build_cfg(device):
+    """Build the HookedTransformerConfig from config.py constants."""
+    return HookedTransformerConfig(
+        n_ctx=SEQUENCE_LENGTH,
+        n_layers=LAYERS,
+        n_heads=HEADS,
+        d_head=DIM_HEADS,
+        d_model=DIM_MODEL,
+        d_mlp=DIM_MLP,
+        d_vocab=TOKEN_TYPES,
+        d_vocab_out=DIM_OUTPUT,
+        act_fn=TYPE,
+        init_weights=INIT_WEIGHTS,
+        device=device,
+        n_devices=NUM_DEVICES,
+        seed=LENS_SEED,
+        attention_dir=ATTENTION_DIRECTION,
+        normalization_type=NORMALIZATION,
+        positional_embedding_type=POSITIONAL_EMBEDDING_TYPE,
+    )
+
+
+def build_model(cfg):
+    """Construct model, optimizer, scheduler and disable biases. Returns the three."""
+    model = HookedTransformer(cfg)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY, betas=BETAS
+    )
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=PATIENCE, factor=0.5)
+
+    # Disable biases for interpretability
+    for name, param in model.named_parameters():
+        if "b_" in name:
+            param.requires_grad = False
+
+    return model, optimizer, scheduler
+
+
+def load_and_split_data(device1):
+    """Load the dataset, shuffle+split with DATA_SEED, move to device1.
+
+    Re-seeds with DATA_SEED immediately before the permutation so the train/test
+    split is identical regardless of any prior RNG consumption — this is what lets
+    the training script and the notebook reproduce the exact same split.
+
+    Returns a dict of train/test tokens, targets, masks, and attention masks.
     """
-    # Move the tensor to CPU and convert it back to a numpy array/dataframe
-    if isinstance(data_tensor, torch.Tensor):
-        df = pd.DataFrame(data_tensor.detach().cpu().numpy())
-    else:
-        df = pd.DataFrame(data_tensor)
+    all_tokens, all_targets, all_mask = load_descent_dataset(DATA_PATH / DATA_CSV, DIM_OUTPUT)
 
-    # Save without a header row and without the row index numbers
-    df.to_csv(file_path, index=False, header=False)
+    torch.manual_seed(DATA_SEED)
+    perm = torch.randperm(all_tokens.size(0))
+    all_tokens  = all_tokens[perm]
+    all_targets = all_targets[perm]
+    all_mask    = all_mask[perm]
 
-# Load the single dataset and shuffle (tokens / multi-hot targets / padding mask)
-all_tokens, all_targets, all_mask = load_descent_dataset(DATA_PATH / data_csv, DIM_OUTPUT)
+    n_train = int(TRAINING_SPLIT * all_tokens.size(0))
+    train_tokens,  test_tokens  = all_tokens[:n_train],  all_tokens[n_train:]
+    train_targets, test_targets = all_targets[:n_train], all_targets[n_train:]
+    train_mask,    test_mask    = all_mask[:n_train],    all_mask[n_train:]
 
-perm = torch.randperm(all_tokens.size(0))
-all_tokens  = all_tokens[perm]
-all_targets = all_targets[perm]
-all_mask    = all_mask[perm]
+    print(f"Train size: {train_tokens.shape[0]} | Test size: {test_tokens.shape[0]} | Seq Len: {train_tokens.shape[1]}")
 
-# Split into train and test using frac_train
-n_train = int(frac_train * all_tokens.size(0))
-train_tokens,  test_tokens  = all_tokens[:n_train],  all_tokens[n_train:]
-train_targets, test_targets = all_targets[:n_train], all_targets[n_train:]
-train_mask,    test_mask    = all_mask[:n_train],    all_mask[n_train:]
+    train_tokens,  test_tokens  = train_tokens.to(device1),  test_tokens.to(device1)
+    train_targets, test_targets = train_targets.to(device1), test_targets.to(device1)
+    train_mask,    test_mask    = train_mask.to(device1),    test_mask.to(device1)
 
-print(f"Train size: {train_tokens.shape[0]} | Test size: {test_tokens.shape[0]} | Seq Len: {train_tokens.shape[1]}")
+    return {
+        "train_tokens": train_tokens,   "test_tokens": test_tokens,
+        "train_targets": train_targets, "test_targets": test_targets,
+        "train_mask": train_mask,       "test_mask": test_mask,
+        # The attention-hook padding mask is exactly the non-pad indicator.
+        "train_attention_mask": train_mask, "test_attention_mask": test_mask,
+    }
 
-# ---------------------------------------------------------------------------
-# Move to Device
-# ---------------------------------------------------------------------------
 
-train_tokens,  test_tokens  = train_tokens.to(device1),  test_tokens.to(device1)
-train_targets, test_targets = train_targets.to(device1), test_targets.to(device1)
-train_mask,    test_mask    = train_mask.to(device1),    test_mask.to(device1)
+def load_checkpoint_into(model, optimizer, scheduler, path=PTH_LOCATION):
+    """Load weights/optimizer/scheduler state from a checkpoint in-place.
 
-# The padding mask used by the attention hook is exactly the non-pad indicator.
-train_attention_mask = train_mask
-test_attention_mask  = test_mask
-
-# ---------------------------------------------------------------------------
-# Training
-# ---------------------------------------------------------------------------
-
-for epoch in tqdm.tqdm(range(num_epochs)):
-    # ---- Register hook for train ----
-    model.reset_hooks()
-    register_pad_mask_hook(model, train_attention_mask)
-
-    # ---- Forward pass ----
-    train_logits = model(train_tokens)      # [batch, seq_len, n_generators]
-    train_loss = descent_loss_fn(train_logits, train_targets, train_mask)
-    train_loss.backward()
-    train_losses.append(train_loss.item())
-
-    # --- Gradient Clipping ---
-    #clip_grad_norm_(model.parameters(), max_norm=3.0)
-
-    # ---- Accuracy (train) ----
-    train_accuracy = descent_accuracy_fn(train_logits, train_targets, train_mask)
-    train_accuracies.append(train_accuracy)
-
-    # ---- Optimizer + Scheduler step ----
-    optimizer.step()
-    #scheduler.step()           # do with mini batches of data
-    optimizer.zero_grad()
-
-    # ---- Evaluation ----
-    with torch.inference_mode():
-        # Add Attention Masking Hook:
-        model.reset_hooks()
-        register_pad_mask_hook(model, test_attention_mask)
-
-        # ---- Forward pass (test) ----
-        test_logits = model(test_tokens)
-        test_loss = descent_loss_fn(test_logits, test_targets, test_mask)
-        test_losses.append(test_loss.item())
-
-        # ---- Accuracy (test) ----
-        test_accuracy = descent_accuracy_fn(test_logits, test_targets, test_mask)
-        test_accuracies.append(test_accuracy)
-
-    # ---- Checkpoint ----
-    if ((epoch + 1) % checkpoint_every) == 0:
-        checkpoint_epochs.append(epoch)
-        # Save model’s weights (not model)
-        model_checkpoints.append(copy.deepcopy(model.state_dict()))
-        print(
-            f"Epoch {epoch} | "
-            f"Train Loss: {train_loss.item():.4f} | "
-            f"Test Loss: {test_loss.item():.4f} | "
-            f"Train Acc: {train_accuracy:.4f} | "
-            f"Test Acc: {test_accuracy:.4f}"
+    Returns (cached, history) where `cached` is the raw checkpoint dict and
+    `history` holds the training-curve lists and weight snapshots.
+    """
+    cached = torch.load(path, weights_only=False)
+    model.load_state_dict(cached["model"])
+    optimizer.load_state_dict(cached["optimizer"])
+    scheduler.load_state_dict(cached["scheduler"])
+    history = {
+        k: cached[k]
+        for k in (
+            "checkpoints", "checkpoint_epochs",
+            "train_losses", "test_losses",
+            "train_accuracies", "test_accuracies",
         )
+    }
+    return cached, history
 
 
 # ---------------------------------------------------------------------------
-# Save / Load Model
+# Training entry point — only runs when executed as a script, not on import.
 # ---------------------------------------------------------------------------
 
-torch.save(
-    {
-        "config": model.cfg,
-        "model": model.state_dict(),
-        "optimizer": optimizer.state_dict(),
-        "scheduler": scheduler.state_dict(),
-        "checkpoints": model_checkpoints,
-        "checkpoint_epochs": checkpoint_epochs,
-        "test_losses": test_losses,
-        "train_losses": train_losses,
-        "train_accuracies": train_accuracies,
-        "test_accuracies": test_accuracies,
-    },
-    PTH_LOCATION,
-)
+if __name__ == "__main__":
+    os.makedirs(Path(PTH_LOCATION).parent, exist_ok=True)
+
+    # -----------------------------------------------------------------------
+    # Device + Seed
+    # -----------------------------------------------------------------------
+
+    device, device1 = setup_device()
+    subprocess.run(["nvidia-smi"])
+
+    torch.manual_seed(seed=DATA_SEED)
+    torch.cuda.manual_seed_all(DATA_SEED)
+
+    num_epochs = NUM_EPOCHS
+    checkpoint_every = CHECKPOINT_STEP
+
+    # -----------------------------------------------------------------------
+    # Model + Optimizer (fresh, or resumed from checkpoint when LOAD_MODEL)
+    # -----------------------------------------------------------------------
+
+    cfg = build_cfg(device)
+    if LOAD_MODEL:
+        cfg = torch.load(PTH_LOCATION, weights_only=False)["config"]
+
+    model, optimizer, scheduler = build_model(cfg)
+
+    if LOAD_MODEL:
+        _, history = load_checkpoint_into(model, optimizer, scheduler)
+        model_checkpoints = history["checkpoints"]
+        checkpoint_epochs = history["checkpoint_epochs"]
+        train_losses = history["train_losses"]
+        test_losses = history["test_losses"]
+        train_accuracies = history["train_accuracies"]
+        test_accuracies = history["test_accuracies"]
+    else:
+        model_checkpoints = []
+        checkpoint_epochs = []
+        train_losses = []
+        train_accuracies = []
+        test_losses = []
+        test_accuracies = []
+
+    # -----------------------------------------------------------------------
+    # Dataset (load + shuffle + split + move to device)
+    # -----------------------------------------------------------------------
+
+    data = load_and_split_data(device1)
+    train_tokens,  test_tokens  = data["train_tokens"],  data["test_tokens"]
+    train_targets, test_targets = data["train_targets"], data["test_targets"]
+    train_mask,    test_mask    = data["train_mask"],    data["test_mask"]
+    train_attention_mask = data["train_attention_mask"]
+    test_attention_mask  = data["test_attention_mask"]
+
+    # -----------------------------------------------------------------------
+    # Training
+    # -----------------------------------------------------------------------
+
+    for epoch in tqdm.tqdm(range(num_epochs)):
+        # ---- Register hook for train ----
+        model.reset_hooks()
+        register_pad_mask_hook(model, train_attention_mask)
+
+        # ---- Forward pass ----
+        train_logits = model(train_tokens)      # [batch, seq_len, n_generators]
+        train_loss = descent_loss_fn(train_logits, train_targets, train_mask)
+        train_loss.backward()
+        train_losses.append(train_loss.item())
+
+        # --- Gradient Clipping ---
+        #clip_grad_norm_(model.parameters(), max_norm=3.0)
+
+        # ---- Accuracy (train) ----
+        train_accuracy = descent_accuracy_fn(train_logits, train_targets, train_mask)
+        train_accuracies.append(train_accuracy)
+
+        # ---- Optimizer + Scheduler step ----
+        optimizer.step()
+        #scheduler.step()           # do with mini batches of data
+        optimizer.zero_grad()
+
+        # ---- Evaluation ----
+        with torch.inference_mode():
+            # Add Attention Masking Hook:
+            model.reset_hooks()
+            register_pad_mask_hook(model, test_attention_mask)
+
+            # ---- Forward pass (test) ----
+            test_logits = model(test_tokens)
+            test_loss = descent_loss_fn(test_logits, test_targets, test_mask)
+            test_losses.append(test_loss.item())
+
+            # ---- Accuracy (test) ----
+            test_accuracy = descent_accuracy_fn(test_logits, test_targets, test_mask)
+            test_accuracies.append(test_accuracy)
+
+        # ---- Checkpoint ----
+        if ((epoch + 1) % checkpoint_every) == 0:
+            checkpoint_epochs.append(epoch)
+            # Save model’s weights (not model)
+            model_checkpoints.append(copy.deepcopy(model.state_dict()))
+            print(
+                f"Epoch {epoch} | "
+                f"Train Loss: {train_loss.item():.4f} | "
+                f"Test Loss: {test_loss.item():.4f} | "
+                f"Train Acc: {train_accuracy:.4f} | "
+                f"Test Acc: {test_accuracy:.4f}"
+            )
+
+    # -----------------------------------------------------------------------
+    # Save / Load Model
+    # -----------------------------------------------------------------------
+
+    torch.save(
+        {
+            "config": model.cfg,
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "scheduler": scheduler.state_dict(),
+            "checkpoints": model_checkpoints,
+            "checkpoint_epochs": checkpoint_epochs,
+            "test_losses": test_losses,
+            "train_losses": train_losses,
+            "train_accuracies": train_accuracies,
+            "test_accuracies": test_accuracies,
+        },
+        PTH_LOCATION,
+    )
