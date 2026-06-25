@@ -5,7 +5,7 @@ import pandas as pd
 # from config.py import *
 # SEQUENCE_LENGTH = 22
 
-INSTANCES = 4000
+INSTANCES = 10000
 SEQUENCE_LENGTH = 22
 
 def generateRandomString(length: int) -> str:

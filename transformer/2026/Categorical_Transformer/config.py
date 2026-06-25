@@ -38,7 +38,7 @@ DATA_CSV       = "data.csv"
 # Training Loop Config
 # ---------------------------------------------------------------------------
 
-NUM_EPOCHS      = 1000
+NUM_EPOCHS      = 25000
 CHECKPOINT_STEP = 100   # save a weight snapshot every this many epochs
 
 # ---------------------------------------------------------------------------
