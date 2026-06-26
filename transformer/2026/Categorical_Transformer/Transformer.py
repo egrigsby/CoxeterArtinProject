@@ -313,14 +313,12 @@ if __name__ == "__main__":
         train_logits = model(train_tokens)      # [batch, seq_len, n_generators]
         train_loss = descent_loss_fn(train_logits, train_targets, train_mask)
         train_loss.backward()
-        train_losses.append(train_loss.item())
 
         # --- Gradient Clipping ---
         #clip_grad_norm_(model.parameters(), max_norm=3.0)
 
         # ---- Accuracy (train) ----
         train_accuracy = descent_accuracy_fn(train_logits, train_targets, train_mask)
-        train_accuracies.append(train_accuracy)
 
         # ---- Optimizer + Scheduler step ----
         optimizer.step()
@@ -336,15 +334,17 @@ if __name__ == "__main__":
             # ---- Forward pass (test) ----
             test_logits = model(test_tokens)
             test_loss = descent_loss_fn(test_logits, test_targets, test_mask)
-            test_losses.append(test_loss.item())
 
             # ---- Accuracy (test) ----
             test_accuracy = descent_accuracy_fn(test_logits, test_targets, test_mask)
-            test_accuracies.append(test_accuracy)
 
         # ---- Checkpoint ----
-        if ((epoch + 1) % checkpoint_every) == 0:
+        if ((epoch) % checkpoint_every) == 0:
             checkpoint_epochs.append(epoch)
+            train_accuracies.append(train_accuracy)
+            train_losses.append(train_loss.item())
+            test_losses.append(test_loss.item())
+            test_accuracies.append(test_accuracy)
             # Save model’s weights (not model)
             model_checkpoints.append(copy.deepcopy(model.state_dict()))
             print(
