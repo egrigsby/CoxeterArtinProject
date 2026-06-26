@@ -2,11 +2,9 @@ import random
 import time
 import pandas as pd
 
-# from config.py import *
-# SEQUENCE_LENGTH = 22
+from config.py import SEQUENCE_LENGTH
 
 INSTANCES = 10000
-SEQUENCE_LENGTH = 22
 
 def generateRandomString(length: int) -> str:
     CHARACTERS = "abc"
