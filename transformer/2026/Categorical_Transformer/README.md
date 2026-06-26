@@ -20,7 +20,7 @@ Because training is behind the `__main__` guard, every function defined at modul
 
 | Helper | Purpose |
 |---|---|
-| `setup_device(verbose=True)` | Configure CUDA env/memory; returns `(device, device1)`. |
+| `setup_device()` | Configure CUDA env/memory; returns `(device, device1)`. |
 | `build_cfg(device)` | Build the `HookedTransformerConfig` from `config.py` constants. |
 | `build_model(cfg)` | Construct model, optimizer (AdamW), scheduler (ReduceLROnPlateau), and disable biases. Returns `(model, optimizer, scheduler)`. |
 | `load_and_split_data(device1)` | Load `data.csv`, shuffle + split with `DATA_SEED`, move to device. Returns a dict of train/test tokens, targets, masks, and attention masks. |
@@ -54,11 +54,7 @@ The trained model is saved to `workspace/_scratch/model.pth` when training finis
 
 ## Boolean Modes
 
-`LOAD_MODEL` affects `Transformer.py` only. The notebook always loads from the checkpoint.
-
-| Flag | Default | Effect |
-|---|---|---|
-| `LOAD_MODEL` | `False` | When `True`, load a previous checkpoint from `PTH_LOCATION` first — restoring model weights, optimizer state, scheduler state, and all loss/accuracy history — then restart from epoch 0 and run the full `NUM_EPOCHS` again. When `False`, train from scratch. Either way the model is saved at the end. |
+`LOAD_MODEL` affects `Transformer.py` only. The notebook always loads from the checkpoint. When `True`, load a previous checkpoint from `PTH_LOCATION` first — restoring model weights, optimizer state, scheduler state, and all loss/accuracy history — then restart from epoch 0 and run the full `NUM_EPOCHS` again. When `False`, train from scratch. Either way the model is saved at the end. |
 
 ---
 
@@ -68,51 +64,51 @@ All configuration lives in `config.py`. Edit that file before running — both `
 
 ### Data Config
 
-| Variable | Default | Description |
-|---|---|---|
-| `DATA_CSV` | `"data.csv"` | Filename of the input dataset. Must be in the same directory as `config.py`. |
-| `TRAINING_SPLIT` | `0.4` | Fraction of the dataset used for **training**. The remainder becomes the test set. (e.g. `0.4` → 40% train, 60% test.) |
-| `DATA_SEED` | `598` | Random seed for dataset shuffling and the train/test split. Ensures reproducibility. |
+| Variable | Description |
+|---|---|
+| `DATA_CSV` | `"data.csv"` Filename of the input dataset. Must be in the same directory as `config.py`. |
+| `TRAINING_SPLIT` | Fraction of the dataset used for **training**. The remainder becomes the test set. (e.g. `0.4` → 40% train, 60% test.) |
+| `DATA_SEED` | Random seed for dataset shuffling and the train/test split. Ensures reproducibility. |
 
 ### Training Loop Config
 
-| Variable | Default | Description |
-|---|---|---|
-| `NUM_EPOCHS` | `25000` | Total number of full-dataset passes to train for (training is full-batch). |
-| `CHECKPOINT_STEP` | `100` | Save a model weight snapshot every this many epochs. All snapshots are stored in memory and written to the `.pth` file at the end. |
+| Variable | Description |
+|---|---|
+| `NUM_EPOCHS` | Total number of full-dataset passes to train for (training is full-batch). |
+| `CHECKPOINT_STEP` | Save a model weight snapshot every this many epochs. All snapshots are stored in memory and written to the `.pth` file at the end. |
 
 ### Transformer Config
 
 These map directly to `HookedTransformerConfig` parameters.
 
-| Variable | Default | Description |
-|---|---|---|
-| `SEQUENCE_LENGTH` | `22` | Fixed length of every input sequence. Must match the word length in `data.csv`. |
-| `LAYERS` | `1` | Number of transformer blocks. More layers increase capacity but also interpretability complexity. |
-| `HEADS` | `4` | Number of attention heads per layer. |
-| `DIM_HEADS` | `64` | Dimension of each attention head. `DIM_MODEL` should equal `HEADS × DIM_HEADS`. |
-| `DIM_MODEL` | `256` | Residual stream dimension (embedding size). |
-| `DIM_MLP` | `256` | Hidden dimension of the MLP block inside each transformer layer. |
-| `TOKEN_TYPES` | `4` | Input vocabulary size — number of generators + 1 padding token (A₂̃: 3 generators + pad = 4). |
-| `DIM_OUTPUT` | `3` | Size of the multi-label head — one independent sigmoid unit per generator (A₂̃: 3). |
-| `TYPE` | `"relu"` | MLP activation function. `"relu"` breaks linearization of the model's computation, which is desirable for mechanistic interpretability. |
-| `INIT_WEIGHTS` | `True` | Whether TransformerLens initializes the weights. |
-| `NUM_DEVICES` | `1` | Number of devices TransformerLens shards the model across. |
-| `LENS_SEED` | `999` | Random seed for TransformerLens weight initialization (separate from `DATA_SEED`). |
-| `ATTENTION_DIRECTION` | `"causal"` | `"causal"` restricts the prediction at position `i` to the prefix `s₁…sᵢ`. (`"bidirectional"` would let every token attend to every other token.) |
-| `NORMALIZATION` | `None` | Layer normalization type. `None` disables it to simplify the computation graph for interpretability. Options: `None`, `"LN"`, `"LNPre"`, `"RMS"`, `"RMSPre"`. |
-| `POSITIONAL_EMBEDDING_TYPE` | `"standard"` | Learned absolute positional embeddings (the TransformerLens default, made explicit). Options: `"standard"`, `"rotary"`, `"shortformer"`, `"alibi"`. |
+| Variable | Description |
+|---|---|
+| `SEQUENCE_LENGTH` | Max length of every input sequence. Must match the word length in `data.csv`. |
+| `LAYERS` | Number of transformer blocks. More layers increase capacity but also interpretability complexity. |
+| `HEADS` | Number of attention heads per layer. |
+| `DIM_HEADS` | Dimension of each attention head. `DIM_MODEL` should equal `HEADS × DIM_HEADS`. |
+| `DIM_MODEL` | Residual stream dimension (embedding size). |
+| `DIM_MLP` | Hidden dimension of the MLP block inside each transformer layer. |
+| `TOKEN_TYPES` | Input vocabulary size — number of generators + 1 padding token (A₂̃: 3 generators + pad = 4). |
+| `DIM_OUTPUT` | Size of the multi-label head — one independent sigmoid unit per generator (A₂̃: 3). |
+| `TYPE` | MLP activation function. `"relu"` breaks linearization of the model's computation, which is desirable for mechanistic interpretability. |
+| `INIT_WEIGHTS` | Whether TransformerLens initializes the weights. |
+| `NUM_DEVICES` | Number of devices TransformerLens shards the model across. |
+| `LENS_SEED` | Random seed for TransformerLens weight initialization (separate from `DATA_SEED`). |
+| `ATTENTION_DIRECTION` | `"causal"` restricts the prediction at position `i` to the prefix `s₁…sᵢ`. (`"bidirectional"` would let every token attend to every other token.) |
+| `NORMALIZATION` |Layer normalization type. `None` disables it to simplify the computation graph for interpretability. Options: `None`, `"LN"`, `"LNPre"`, `"RMS"`, `"RMSPre"`. |
+| `POSITIONAL_EMBEDDING_TYPE` | Learned absolute positional embeddings (the TransformerLens default, made explicit). Options: `"standard"`, `"rotary"`, `"shortformer"`, `"alibi"`. |
 
 ### Optimizer Config
 
 The optimizer is **AdamW**. The learning-rate scheduler is `ReduceLROnPlateau`, which halves the learning rate when test loss stops improving.
 
-| Variable | Default | Description |
-|---|---|---|
-| `LEARNING_RATE` | `1e-5` | Initial learning rate. Kept small because full-batch training produces very accurate gradients that do not need large steps. |
-| `WEIGHT_DECAY` | `7` | L2 regularization strength. Unusually large (typical values are 0.01–0.1); monitor for instability. |
-| `BETAS` | `(0.9, 0.98)` | AdamW momentum parameters `(β₁, β₂)`. |
-| `PATIENCE` | `20` | Number of epochs with no test-loss improvement before the scheduler reduces the learning rate. |
+| Variable | Description |
+|---|---|
+| `LEARNING_RATE` | Initial learning rate. Kept small because full-batch training produces very accurate gradients that do not need large steps. |
+| `WEIGHT_DECAY` | L2 regularization strength. Unusually large (typical values are 0.01–0.1); monitor for instability. |
+| `BETAS` | AdamW momentum parameters `(β₁, β₂)`. |
+| `PATIENCE` | Number of epochs with no test-loss improvement before the scheduler reduces the learning rate. |
 
 ---
 
