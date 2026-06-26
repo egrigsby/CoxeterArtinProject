@@ -16,7 +16,7 @@
 
 # get notifications
 #SBATCH --mail-type=BEGIN,END,FAIL
-##SBATCH --mail-user=linrya@bc.edu
+##SBATCH --mail-user=<id>@bc.edu
 
 ###########################
 ### End of SLURM params ###
