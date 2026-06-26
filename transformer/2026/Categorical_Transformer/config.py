@@ -60,9 +60,7 @@ NUM_DEVICES         = 1
 LENS_SEED           = 999       # TransformerLens weight-init seed (separate from DATA_SEED)
 ATTENTION_DIRECTION = "causal"  # causal: prediction at position i sees only the prefix s_1..s_i
 NORMALIZATION       = None      # None, "LN", "LNPre", "RMS", "RMSPre"
-# Learned absolute positional embeddings (TransformerLens default, made explicit here).
-# Options: "standard", "rotary", "shortformer", "alibi".
-POSITIONAL_EMBEDDING_TYPE = "standard"
+POSITIONAL_EMBEDDING_TYPE = "standard" # Options: "standard", "rotary", "shortformer", "alibi".
 
 # ---------------------------------------------------------------------------
 # Optimizer Config
@@ -71,6 +69,6 @@ POSITIONAL_EMBEDDING_TYPE = "standard"
 # Scheduler: ReduceLROnPlateau — halves lr when test loss stalls for PATIENCE epochs.
 # NOTE: a small lr is recommended for full-batch training; accurate gradients don't need large steps.
 LEARNING_RATE = 1e-5
-WEIGHT_DECAY  = 7       # unusually large (typical: 0.01–0.1); monitor for instability
+WEIGHT_DECAY  = 2       # unusually large (typical: 0.01–0.1); monitor for instability
 BETAS         = (0.9, 0.98)
 PATIENCE      = 20
