@@ -10,6 +10,7 @@ import subprocess
 import tqdm.auto as tqdm
 import copy
 from pathlib import Path
+import sys
 
 # CSV Use Libraries
 import pandas as pd
@@ -269,6 +270,7 @@ if __name__ == "__main__":
 
     cfg = build_cfg(device)
     if LOAD_MODEL:
+        sys.modules['transformer_lens.HookedTransformerConfig'] = sys.modules['transformer_lens.config.hooked_transformer_config']
         cfg = torch.load(PTH_LOCATION, weights_only=False)["config"]
 
     model, optimizer, scheduler = build_model(cfg)
