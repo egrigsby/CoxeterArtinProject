@@ -41,6 +41,7 @@ import subprocess
 import tqdm.auto as tqdm
 import copy
 from pathlib import Path
+import sys
 
 # CSV Use Libraries
 import pandas as pd
@@ -115,6 +116,7 @@ cfg = HookedTransformerConfig(
 
 cached_data = None
 if LOAD_MODEL:
+    sys.modules['transformer_lens.HookedTransformerConfig'] = sys.modules['transformer_lens.config.hooked_transformer_config']
     cached_data = torch.load(PTH_LOCATION, weights_only=False)
     cfg = cached_data["config"]
 
