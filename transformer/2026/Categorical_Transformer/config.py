@@ -47,11 +47,11 @@ CHECKPOINT_STEP = 100   # save a weight snapshot every this many epochs
 
 # These map directly to HookedTransformerConfig parameters.
 SEQUENCE_LENGTH     = 22        # fixed word length; must match the number of columns per row in DATA_CSV
-LAYERS              = 1
-HEADS               = 4
+LAYERS              = 3         # Increased from 1 for more capacity/depth
+HEADS               = 8         # Increased from 4 for more diverse attention patterns
 DIM_HEADS           = 64
-DIM_MODEL           = 256       # should equal HEADS * DIM_HEADS
-DIM_MLP             = 256       # hidden dim of MLP block; typically 4 * DIM_MODEL
+DIM_MODEL           = 512       # Adjusted to equal HEADS * DIM_HEADS (8 * 64)
+DIM_MLP             = 2048      # Standardized to 4 * DIM_MODEL for standard transformer scaling
 TOKEN_TYPES         = 4         # input vocab size: #generators + 1 padding token (A2~: 3 gens + pad = 4)
 DIM_OUTPUT          = 3         # multi-label head: one independent sigmoid unit per generator (A2~: 3)
 TYPE                = "relu"    # activation; relu breaks linearization (good for interpretability)
@@ -59,16 +59,15 @@ INIT_WEIGHTS        = True
 NUM_DEVICES         = 1
 LENS_SEED           = 999       # TransformerLens weight-init seed (separate from DATA_SEED)
 ATTENTION_DIRECTION = "causal"  # causal: prediction at position i sees only the prefix s_1..s_i
-NORMALIZATION       = None      # None, "LN", "LNPre", "RMS", "RMSPre"
+NORMALIZATION       = "LNPre"   # Changed from None to Pre-Layer Norm to stabilize the deeper 3-layer network
 POSITIONAL_EMBEDDING_TYPE = "standard" # Options: "standard", "rotary", "shortformer", "alibi".
 
 # ---------------------------------------------------------------------------
 # Optimizer Config
 # ---------------------------------------------------------------------------
-
 # Scheduler: ReduceLROnPlateau — halves lr when test loss stalls for PATIENCE epochs.
 # NOTE: a small lr is recommended for full-batch training; accurate gradients don't need large steps.
-LEARNING_RATE = 1e-5
-WEIGHT_DECAY  = 2       # unusually large (typical: 0.01–0.1); monitor for instability
-BETAS         = (0.9, 0.98)
-PATIENCE      = 20
+LEARNING_RATE = 1e-4        # Bumped up slightly from 1e-5 to match the larger 3-layer model capacity
+WEIGHT_DECAY  = 0.01        # Reduced from 2 to a standard 0.01 to prevent crushing the weights/gradients
+BETAS         = (0.9, 0.98) # Kept standard AdamW betas (excellent for Transformers)
+PATIENCE      = 15          # Lowered slightly from 20 to react faster to plateaus, given the deeper model
