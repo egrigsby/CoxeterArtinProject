@@ -19,8 +19,8 @@ SSH into your `andromeda.bc.edu` account, then in a **bash** terminal:
 interactive -G 1
 module load miniconda
 conda activate /projects/expmmllab/CoxeterEnv
-cd transformer/2026/Categorical_Transformer/
 ```
+Then cd into the working directory.
 
 ### 1. (Optional) Generate `data.csv`
 
