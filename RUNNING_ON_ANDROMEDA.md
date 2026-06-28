@@ -11,26 +11,6 @@ Andromeda cluster (`andromeda.bc.edu`).
 
 ---
 
-## One-Time Setup
-
-Do this **once** to create the conda environment and install packages.
-
-SSH into your `andromeda.bc.edu` account, then in a **bash** terminal:
-
-```bash
-interactive
-module avail miniconda
-module load miniconda
-conda create -n env_conda python=3.12
-conda activate env_conda
-pip install -r expmmll.txt
-conda deactivate
-```
-
-Then close the terminal (trash-can icon).
-
----
-
 ## Interactive Run (VS Code — jobs under ~1 hour)
 
 SSH into your `andromeda.bc.edu` account, then in a **bash** terminal:
@@ -38,7 +18,7 @@ SSH into your `andromeda.bc.edu` account, then in a **bash** terminal:
 ```bash
 interactive -G 1
 module load miniconda
-conda activate env_conda
+conda activate /projects/expmmllab/CoxeterEnv
 cd transformer/2026/Categorical_Transformer/
 ```
 
