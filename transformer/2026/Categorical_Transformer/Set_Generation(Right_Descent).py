@@ -2,7 +2,7 @@ import random
 import time
 import pandas as pd
 
-from config.py import SEQUENCE_LENGTH
+from config import SEQUENCE_LENGTH
 
 INSTANCES = 10000
 
