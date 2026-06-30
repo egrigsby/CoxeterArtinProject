@@ -16,7 +16,7 @@ CHECKPOINT_STEP = 100
 
 # --- Transformer Config (Config 1) ---
 SEQUENCE_LENGTH           = 22
-LAYERS                    = 6       # Slower, deeper structural tracking
+LAYERS                    = 10       # Slower, deeper structural tracking
 HEADS                     = 4       
 DIM_HEADS                 = 16      
 DIM_MODEL                 = 64      # Balanced (HEADS * DIM_HEADS = 4 * 16)
