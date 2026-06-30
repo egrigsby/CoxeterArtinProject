@@ -11,12 +11,12 @@ DATA_SEED      = 598
 TRAINING_SPLIT = 0.4
 DATA_CSV       = "data.csv"
 
-NUM_EPOCHS      = 10  # Set to 50000 on Cluster
+NUM_EPOCHS      = 100000  # Set to 50000 on Cluster
 CHECKPOINT_STEP = 100
 
 # --- Transformer Config (Config 1) ---
 SEQUENCE_LENGTH           = 22
-LAYERS                    = 10       # Slower, deeper structural tracking
+LAYERS                    = 2       # Slower, deeper structural tracking
 HEADS                     = 4       
 DIM_HEADS                 = 16      
 DIM_MODEL                 = 64      # Balanced (HEADS * DIM_HEADS = 4 * 16)
