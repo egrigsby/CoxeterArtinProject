@@ -1,7 +1,6 @@
 .ipynb_checkpoints
 *.pth
 .gitignore
-CLAUDE.md
 __pycache__
 logs
 workspace
