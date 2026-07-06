@@ -51,9 +51,25 @@ def descent_accuracy_fn(logits, targets, mask):
     m = mask.float()
     return (exact * m).sum() / m.sum()
 
+def descent_bit_accuracy_fn(logits, targets, mask):
+    """
+    Per-bit (per-generator) accuracy: the fraction of individual descent bits
+    predicted correctly, averaged over all non-pad positions AND all generators.
+
+    Unlike descent_accuracy_fn (which credits a position only when all
+    n_generators bits are right), this gives partial credit, so it keeps moving
+    while the model is only partially correct — a far better training signal for
+    diagnosing whether learning is happening at all. Normalization matches
+    descent_loss_fn (divide by non-pad positions * n_generators).
+    """
+    preds = (logits > PRED_THRESHOLD).float()   # sigmoid(logit) > 0.5  <=>  logit > 0
+    correct = (preds == targets).float()        # [batch, seq_len, n_generators]
+    m = mask.unsqueeze(-1).float()              # [batch, seq_len, 1]
+    return (correct * m).sum() / (m.sum() * logits.size(-1))
+
 def descent_sequence_accuracy(logits, targets, mask):
     """Per-sequence fraction of prefixes with an exactly-correct descent set.
-    Returns shape (batch_size,)."""
+    Returns shape (batch_size,). Unused Currently"""
     preds = (logits > 0).float()
     correct_bits = (preds == targets).float().sum(dim=-1)
     exact = (correct_bits == logits.size(-1)).float()
@@ -238,6 +254,7 @@ def load_checkpoint_into(model, optimizer, scheduler, path=PTH_LOCATION):
             "checkpoints", "checkpoint_epochs",
             "train_losses", "test_losses",
             "train_accuracies", "test_accuracies",
+            "train_bit_accuracies", "test_bit_accuracies"
         )
     }
     return cached, history
@@ -281,6 +298,8 @@ if __name__ == "__main__":
         test_losses = history["test_losses"]
         train_accuracies = history["train_accuracies"]
         test_accuracies = history["test_accuracies"]
+        train_bit_accuracies = history["train_bit_accuracies"]
+        test_bit_accuracies = history["test_bit_accuracies"]
     else:
         model_checkpoints = []
         checkpoint_epochs = []
@@ -288,6 +307,8 @@ if __name__ == "__main__":
         train_accuracies = []
         test_losses = []
         test_accuracies = []
+        train_bit_accuracies = []
+        test_bit_accuracies = []
 
     # -----------------------------------------------------------------------
     # Dataset (load + shuffle + split + move to device)
@@ -319,6 +340,7 @@ if __name__ == "__main__":
 
         # ---- Accuracy (train) ----
         train_accuracy = descent_accuracy_fn(train_logits, train_targets, train_mask)
+        train_bit_accuracy = descent_bit_accuracy_fn(train_logits, train_targets, train_mask)
 
         # ---- Optimizer + Scheduler step ----
         optimizer.step()
@@ -337,6 +359,7 @@ if __name__ == "__main__":
 
             # ---- Accuracy (test) ----
             test_accuracy = descent_accuracy_fn(test_logits, test_targets, test_mask)
+            train_bit_accuracy = descent_bit_accuracy_fn(train_logits, train_targets, train_mask)
 
         # ---- Checkpoint ----
         if ((epoch) % checkpoint_every) == 0:
@@ -345,6 +368,8 @@ if __name__ == "__main__":
             train_losses.append(train_loss.item())
             test_losses.append(test_loss.item())
             test_accuracies.append(test_accuracy)
+            train_bit_accuracies.append(train_bit_accuracy)
+            test_bit_accuracies.append(test_bit_accuracy)
             # Save model’s weights (not model)
             model_checkpoints.append(copy.deepcopy(model.state_dict()))
             print(
@@ -353,6 +378,8 @@ if __name__ == "__main__":
                 f"Test Loss: {test_loss.item():.4f} | "
                 f"Train Acc: {train_accuracy:.4f} | "
                 f"Test Acc: {test_accuracy:.4f}"
+                f"Train Bit Acc: {train_bit_accuracy:.4f} | "
+                f"Test Bit Acc: {test_bit_accuracy:.4f}"
             )
 
     # -----------------------------------------------------------------------
@@ -371,6 +398,8 @@ if __name__ == "__main__":
             "train_losses": train_losses,
             "train_accuracies": train_accuracies,
             "test_accuracies": test_accuracies,
+            "train_bit_accuracies": train_bit_accuracies,
+            "test_bit_accuracies": test_bit_accuracies,
         },
         PTH_LOCATION,
     )
