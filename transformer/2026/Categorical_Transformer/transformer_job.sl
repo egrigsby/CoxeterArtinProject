@@ -2,7 +2,7 @@
 #SBATCH --job-name=TransformerRun
 #SBATCH --output=logs/%x_%j.out             # Output file
 #SBATCH --error=logs/%x_%j.err              # Error file
-#SBATCH --time=08:00:00                     # Time limit (hrs:min:sec)
+#SBATCH --time=04:00:00                     # Time limit (hrs:min:sec)
 
 #SBATCH --nodes=1                           # Number of nodes
 

@@ -6,6 +6,7 @@ from config import *
 
 import torch
 import os
+import shutil
 import subprocess
 import tqdm.auto as tqdm
 import copy
@@ -62,14 +63,14 @@ def descent_bit_accuracy_fn(logits, targets, mask):
     diagnosing whether learning is happening at all. Normalization matches
     descent_loss_fn (divide by non-pad positions * n_generators).
     """
-    preds = (logits > PRED_THRESHOLD).float()   # sigmoid(logit) > 0.5  <=>  logit > 0
+    preds = (logits > 0).float()                # sigmoid(logit) > 0.5  <=>  logit > 0
     correct = (preds == targets).float()        # [batch, seq_len, n_generators]
     m = mask.unsqueeze(-1).float()              # [batch, seq_len, 1]
     return (correct * m).sum() / (m.sum() * logits.size(-1))
 
 def descent_sequence_accuracy(logits, targets, mask):
     """Per-sequence fraction of prefixes with an exactly-correct descent set.
-    Returns shape (batch_size,). Unused Currently"""
+    Returns shape (batch_size,)."""
     preds = (logits > 0).float()
     correct_bits = (preds == targets).float().sum(dim=-1)
     exact = (correct_bits == logits.size(-1)).float()
@@ -249,12 +250,13 @@ def load_checkpoint_into(model, optimizer, scheduler, path=PTH_LOCATION):
     optimizer.load_state_dict(cached["optimizer"])
     scheduler.load_state_dict(cached["scheduler"])
     history = {
-        k: cached[k]
+        k: cached.get(k, [])
         for k in (
             "checkpoints", "checkpoint_epochs",
             "train_losses", "test_losses",
             "train_accuracies", "test_accuracies",
-            "train_bit_accuracies", "test_bit_accuracies"
+            # .get: checkpoints saved before bit accuracy was logged lack these keys
+            "train_bit_accuracies", "test_bit_accuracies",
         )
     }
     return cached, history
@@ -272,7 +274,8 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
 
     device, device1 = setup_device()
-    subprocess.run(["nvidia-smi"])
+    if shutil.which("nvidia-smi"):
+        subprocess.run(["nvidia-smi"])
 
     torch.manual_seed(seed=DATA_SEED)
     torch.cuda.manual_seed_all(DATA_SEED)
@@ -359,7 +362,7 @@ if __name__ == "__main__":
 
             # ---- Accuracy (test) ----
             test_accuracy = descent_accuracy_fn(test_logits, test_targets, test_mask)
-            train_bit_accuracy = descent_bit_accuracy_fn(train_logits, train_targets, train_mask)
+            test_bit_accuracy = descent_bit_accuracy_fn(test_logits, test_targets, test_mask)
 
         # ---- Checkpoint ----
         if ((epoch) % checkpoint_every) == 0:
@@ -377,7 +380,7 @@ if __name__ == "__main__":
                 f"Train Loss: {train_loss.item():.4f} | "
                 f"Test Loss: {test_loss.item():.4f} | "
                 f"Train Acc: {train_accuracy:.4f} | "
-                f"Test Acc: {test_accuracy:.4f}"
+                f"Test Acc: {test_accuracy:.4f} | "
                 f"Train Bit Acc: {train_bit_accuracy:.4f} | "
                 f"Test Bit Acc: {test_bit_accuracy:.4f}"
             )
