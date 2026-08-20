@@ -12,7 +12,7 @@ Make sure to run the Torch Setup notebook to download all of the libraries.
 | `Transformer.py` | Training script **and** shared-helper module. Run as a script to train; import from it to reuse its functions. The training code is guarded by `if __name__ == "__main__"`, so importing it does **not** trigger training. |
 | `Analysis.ipynb` | Analysis notebook. Imports config and helpers from `Transformer.py`, loads the checkpoint, and runs interpretability analysis. |
 
-The dataset is generated separately by `../Set_Generation/build_descent_dataset.py` (which uses `descents.py` to compute right descent sets from the Coxeter matrix).
+The dataset is generated separately by each run's own builder -- e.g. `arms/reduced/build_descent_dataset.py`, which uses `descents.py` here to compute right descent sets from the Coxeter matrix. See `../REPLICATION.md`.
 
 ### Importable helpers in `Transformer.py`
 

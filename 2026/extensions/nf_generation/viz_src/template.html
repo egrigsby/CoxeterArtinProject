@@ -1,0 +1,187 @@
+<meta charset="utf-8">
+<title>Generating a normal form — affine A₂</title>
+<style>{{CSS}}</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <h1>Generating a normal form</h1>
+      <p>A one-layer transformer writes ShortLex normal-form words of the affine Coxeter group Ã₂,
+         one letter at a time. Each letter is a reflection, so the word it is building is also a
+         walk across the triangular tiling the group acts on — both are drawn below as they happen.
+         The real trained weights run in this page; nothing is pre-recorded.</p>
+    </div>
+    <div class="provenance">
+      <div><b id="prov-params">—</b>weights, 1 layer</div>
+      <div><b>0.896</b>next-letter acc. (test)</div>
+      <div><b>476/476</b>greedy rollouts legal</div>
+    </div>
+  </header>
+
+  <div class="deck">
+
+    <section class="panel stage">
+      <div class="panel-head">
+        <span class="label">The walk</span>
+        <span class="label" id="stage-caption">alcoves of Ã₂</span>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="tiling"></canvas>
+        <div class="hover-card" id="hover"></div>
+      </div>
+      <div class="stage-foot">
+        <span class="key"><i class="key-swatch g1"></i>wall of s₁</span>
+        <span class="key"><i class="key-swatch g2"></i>wall of s₂</span>
+        <span class="key"><i class="key-swatch g3"></i>wall of s₃</span>
+        <span class="key"><i class="key-swatch trail"></i>alcoves already visited</span>
+        <span class="key">e = identity</span>
+      </div>
+    </section>
+
+    <section class="panel readout">
+      <div class="panel-head">
+        <span class="label">Next letter</span>
+        <span class="label" id="source-caption">—</span>
+      </div>
+      <div class="readout-body">
+
+        <div class="status" id="status"><i class="dot"></i><span id="status-text">—</span></div>
+
+        <div class="metrics">
+          <div class="metric"><span>letter</span><b id="m-step">—</b></div>
+          <div class="metric"><span>length ℓ</span><b id="m-ell">—</b></div>
+          <div class="metric"><span>legal next</span><b id="m-legal">—</b></div>
+        </div>
+
+        <div class="word-strip" id="word-strip"></div>
+
+        <div class="bars" id="bars">
+          <div class="bar-row" data-g="1" data-cls="1">
+            <div class="bar-name"><i></i>s₁</div>
+            <div class="bar-track"><div class="bar-fill"></div><div class="bar-tick"></div></div>
+            <div class="bar-value">—</div>
+            <div class="bar-flag"></div>
+          </div>
+          <div class="bar-row" data-g="2" data-cls="2">
+            <div class="bar-name"><i></i>s₂</div>
+            <div class="bar-track"><div class="bar-fill"></div><div class="bar-tick"></div></div>
+            <div class="bar-value">—</div>
+            <div class="bar-flag"></div>
+          </div>
+          <div class="bar-row" data-g="3" data-cls="3">
+            <div class="bar-name"><i></i>s₃</div>
+            <div class="bar-track"><div class="bar-fill"></div><div class="bar-tick"></div></div>
+            <div class="bar-value">—</div>
+            <div class="bar-flag"></div>
+          </div>
+          <div class="bar-row" data-g="stop" data-cls="0">
+            <div class="bar-name"><i></i>stop</div>
+            <div class="bar-track"><div class="bar-fill"></div><div class="bar-tick"></div></div>
+            <div class="bar-value">—</div>
+            <div class="bar-flag"></div>
+          </div>
+        </div>
+
+        <p class="legend-note" id="legend-note">Bars are the model's own probabilities. A letter is
+          <b>legal</b> when it keeps the word a ShortLex normal form.</p>
+
+      </div>
+    </section>
+
+  </div>
+
+  <section class="panel controls">
+
+    <div class="control-group">
+      <span class="label">Seed</span>
+      <div class="row">
+        <input type="text" id="seed-input" value="1" spellcheck="false" autocomplete="off"
+               aria-label="seed word" pattern="[ ,123]*">
+        <button id="seed-go">Generate</button>
+      </div>
+      <div class="row">
+        <button class="mini" data-seed="1">1</button>
+        <button class="mini" data-seed="2">2</button>
+        <button class="mini" data-seed="3">3</button>
+        <button class="mini" data-seed="121">121</button>
+        <button class="mini" id="seed-random">random prefix</button>
+      </div>
+      <p class="hint" id="seed-hint">Letters 1, 2, 3 only. The model has no start token, so it needs
+        at least one letter to continue from.</p>
+    </div>
+
+    <div class="control-group">
+      <span class="label">Playback</span>
+      <div class="row">
+        <button class="primary" id="play">Play</button>
+        <button class="mini" id="back" aria-label="previous letter">◀</button>
+        <button class="mini" id="fwd" aria-label="next letter">▶</button>
+        <button class="mini" id="reset">Reset</button>
+      </div>
+      <div class="slider-row">
+        <input type="range" id="scrub" min="1" max="36" value="1" aria-label="letter">
+        <span class="readval" id="scrub-val">1 / 36</span>
+      </div>
+      <div class="slider-row">
+        <input type="range" id="speed" min="1" max="10" value="5" aria-label="speed">
+        <span class="readval" id="speed-val">5 / s</span>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <span class="label">Sampling</span>
+      <div class="slider-row">
+        <input type="range" id="temp" min="0" max="20" value="0" aria-label="temperature">
+        <span class="readval" id="temp-val">greedy</span>
+      </div>
+      <div class="row">
+        <button class="mini" id="reroll">New sample</button>
+        <span class="readval" id="rng-val">—</span>
+      </div>
+      <p class="hint" id="temp-hint">At temperature 0 the model always takes its top letter. Raise it
+        to sample from the tail and watch legality break.</p>
+    </div>
+
+  </section>
+
+  <section class="panel notes">
+    <div>
+      <h2>What the picture is</h2>
+      <p>Ã₂ is the symmetry group of the triangular tiling of the plane. Each element is one triangle
+        — an <b>alcove</b> — and the identity is the shaded one marked <code>e</code>. Adding a letter
+        <code>g</code> to the right of the word reflects the current alcove across its <code>g</code>-wall,
+        so a word of length <i>n</i> is a chain of <i>n</i> triangles, each sharing an edge with the last.</p>
+      <p>Reduced words never revisit an alcove. If a sampled letter makes the word non-reduced, the walk
+        visibly doubles back onto a triangle it has already been to.</p>
+    </div>
+    <div>
+      <h2>What the model is</h2>
+      <p>A 1-layer causal transformer (4 heads, width 256, no layer norm) trained on the 1998 ShortLex
+        normal-form words of Ã₂ of length 1 to 36, split 30/70 into train and test. At every letter it
+        predicts the next one, over the four classes <code>stop, 1, 2, 3</code>.</p>
+      <p>Several letters can legally follow a given prefix, so top-1 accuracy has a ceiling well below 1;
+        the honest test is whether a whole generated word stays in the language.</p>
+      <p id="stop-note">A word ends when the model emits <code>stop</code>, or when it runs into the
+        36-letter cap that the training words respect.</p>
+    </div>
+    <div>
+      <h2>Reading the panel</h2>
+      <p>The bars are the model's probabilities for the next letter, before any temperature is applied.
+        <b>Legal</b> means that letter keeps the word inside the normal-form language, checked against
+        all 1998 words, not predicted. When temperature is above 0 a tick on each bar marks the
+        distribution actually sampled from.</p>
+      <p>Length ℓ is the true Coxeter length of the prefix — how far its alcove is from <code>e</code>.
+        While the word stays reduced it equals the number of letters.</p>
+    </div>
+    <p class="colophon" id="colophon">—</p>
+  </section>
+
+</div>
+
+<script>var PAYLOAD = {{PAYLOAD}};</script>
+<script>var NF_WORDS = {{NF_WORDS}};</script>
+<script>var VIZ_META = {{META}};</script>
+<script>{{MODEL_JS}}</script>
+<script>{{GEOMETRY_JS}}</script>
+<script>{{UI_JS}}</script>

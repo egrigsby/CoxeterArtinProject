@@ -1,3 +1,9 @@
+"""
+Random arm - 2-layer hyperparameter exploration. NOT the frozen shared config:
+changes depth, width, normalization and weight decay at once, so results from this
+config are NOT comparable with the other two arms.
+"""
+
 import os
 from pathlib import Path
 

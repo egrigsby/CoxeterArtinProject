@@ -1,3 +1,8 @@
+"""
+Random arm - unconstrained random words over the generators of A2~ (repeats allowed).
+1-layer baseline: the frozen shared configuration. Dataset: Set_Generation(Right_Descent).py.
+"""
+
 import os
 from pathlib import Path
 
@@ -68,7 +73,7 @@ POSITIONAL_EMBEDDING_TYPE = "standard" # Options: "standard", "rotary", "shortfo
 
 # Scheduler: ReduceLROnPlateau — halves lr when test loss stalls for PATIENCE epochs.
 # (Note: scheduler.step() is currently disabled in the training loop, so the LR is constant.)
-# These values reproduce the best-performing baseline (see REPORT.md, exp01):
+# These are the frozen shared optimizer settings used by every run in RESULTS.md:
 # 1e-5 / WD=2 underfit badly; WD=0 overfits; 1e-3 / WD=0.5 is the validated operating point.
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY  = 0.5
