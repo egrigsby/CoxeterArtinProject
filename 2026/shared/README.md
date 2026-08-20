@@ -1,22 +1,39 @@
-# Categorical Transformer
+# The Shared Model
 
-Trains a [TransformerLens](https://github.com/TransformerLensOrg/TransformerLens) `HookedTransformer` on Coxeter group word data using a **per-prefix right-descent-set prediction** objective. With **causal** attention, at each prefix `s₁…sᵢ` of a word the model predicts the *right descent set* of that prefix — i.e. for every generator independently, whether it is a right descent. This is a **multi-label** task (a prefix can have several descents at once), trained with masked binary cross-entropy.
+Everything in this folder is shared by **every** run in `../arms/` and `../extensions/`. There is
+exactly one copy of each distinct model version here; a run supplies only its own `config.py`.
 
-Make sure to run the Torch Setup notebook to download all of the libraries.
+The core objective: a [TransformerLens](https://github.com/TransformerLensOrg/TransformerLens)
+`HookedTransformer` predicts, at each prefix `s₁…sᵢ` of a word, the **right descent set** of that
+prefix — for every generator independently, whether it is a descent. Attention is **causal**, so
+the logits at position `i` predict the descent set of the prefix ending at `i` with no label
+shifting. A prefix can have several descents at once, so this is **multi-label**: one independent
+sigmoid per generator, trained with masked binary cross-entropy.
+
+> **The model is frozen.** All three arms must run identical code so that results differ only by
+> dataset. Do not edit these files to make one arm work — raise it with the team instead. See the
+> "Deliberate quirks" section of `../README.md`.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `config.py` | **Single source of truth** for all configuration. Edit this file to change any setting. |
-| `Transformer.py` | Training script **and** shared-helper module. Run as a script to train; import from it to reuse its functions. The training code is guarded by `if __name__ == "__main__"`, so importing it does **not** trigger training. |
-| `Analysis.ipynb` | Analysis notebook. Imports config and helpers from `Transformer.py`, loads the checkpoint, and runs interpretability analysis. |
+| `Transformer.py` | The model. Split-on-load: reads one `DATA_CSV` and splits it with `DATA_SEED` / `TRAINING_SPLIT`. Used by the reduced and random arms. |
+| `Transformer_presplit.py` | Same model, but reads a fixed `TRAIN_CSV` / `TEST_CSV` partition instead of splitting at load time. Used by the normal-form arm, `minimal_length`, and `affine_a3`. |
+| `Transformer_classification.py` | Cross-entropy variant: one label per position rather than a multi-label bitmask. Used by `element_classification` and `nf_generation`. |
+| `Analysis.ipynb` / `Analysis_presplit.ipynb` / `Analysis_classification.ipynb` | One analysis notebook per model variant. Set `ARM_DIR` in the first code cell to the run you want to inspect. |
+| `descents.py` | Descent sets from a Coxeter matrix via the geometric (Tits) representation. Self-contained; takes any Coxeter matrix (`np.inf` for infinite bonds). |
+| `transformer_job.sl` | SLURM template. Each run folder has its own copy already pointed at the right model. |
+
+Each run supplies its own `config.py` — **this folder deliberately contains none**, which is what
+lets a run put its own directory on `PYTHONPATH` and have `from config import *` resolve there.
+See `../REPLICATION.md`.
 
 The dataset is generated separately by each run's own builder -- e.g. `arms/reduced/build_descent_dataset.py`, which uses `descents.py` here to compute right descent sets from the Coxeter matrix. See `../REPLICATION.md`.
 
-### Importable helpers in `Transformer.py`
+### Importable helpers
 
-Because training is behind the `__main__` guard, every function defined at module level can be imported without side effects. `Analysis.ipynb` imports these rather than redefining them, so the two stay in sync:
+Because training is behind the `__main__` guard, every function defined at module level can be imported without side effects. The analysis notebooks import these rather than redefining them, so the two stay in sync:
 
 | Helper | Purpose |
 |---|---|
@@ -31,11 +48,16 @@ Because training is behind the `__main__` guard, every function defined at modul
 
 ## Quickstart
 
-1. Place your dataset as `data.csv` in this directory (same folder as `config.py`).
-2. Edit settings in `config.py` as needed.
-3. Run: `python Transformer.py`
+Run from a **run folder**, not from here:
 
-The trained model is saved to `workspace/_scratch/model.pth` when training finishes.
+```bash
+cd ../arms/reduced/length22
+python ../build_descent_dataset.py      # produces data.csv here
+mkdir -p logs
+sbatch transformer_job.sl               # or: PYTHONPATH=$PWD python ../../../shared/Transformer.py
+```
+
+The trained model is saved to that run folder's `workspace/_scratch/model.pth`.
 
 ---
 
@@ -112,7 +134,7 @@ The optimizer is **AdamW**. The learning-rate scheduler is `ReduceLROnPlateau`, 
 
 ---
 
-## Analysis Notebook (`Analysis.ipynb`)
+## Analysis Notebooks
 
 The notebook loads the saved checkpoint and runs interpretability analysis on the trained model. It imports the shared helpers from `Transformer.py` and calls `load_and_split_data` to reproduce the identical train/test split used during training.
 
@@ -122,9 +144,9 @@ The notebook loads the saved checkpoint and runs interpretability analysis on th
 - Per-word attention pattern visualizations
 - **Misclassification analysis** — each sequence is given a *sequence accuracy* (`descent_sequence_accuracy`: the fraction of its prefixes whose right-descent set is predicted exactly correctly). A sequence is "imperfect" if that accuracy is `< 1.0`. Imperfect sequences are flagged and their length distribution is plotted for both train and test sets.
 
-**Running the notebook:** The first cell adds the Categorical Transformer directory to `sys.path` so `config.py` and `Transformer.py` can be imported. Run the cells top-to-bottom.
+**Running the notebook:** Set `ARM_DIR` in the first code cell to the run folder you want to analyze — that puts its `config.py` on `sys.path` alongside this folder's model. Then run the cells top-to-bottom.
 
-> **Environment note:** the checkpoint's pickled `cfg` was saved with a newer `transformer_lens` (the notebook runs in a Python 3.12 env). Loading it requires that same environment — the `transformer_lens` in `/projects/expmmllab/CoxeterEnv` (Python 3.11) cannot unpickle it. The notebook includes a `sys.modules` shim cell for its own runtime.
+> **Environment note:** `transformer_lens` pickles are version-sensitive, so a checkpoint's `cfg` saved by one version may not unpickle under another. The notebooks include a `sys.modules` shim for the one rename that is known to occur, but it cannot cover every skew — if a checkpoint looks corrupt, check the interpreter and `transformer_lens` versions first. See `../../Setup/README.md`.
 
 ---
 

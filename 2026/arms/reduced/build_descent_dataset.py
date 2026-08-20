@@ -14,9 +14,15 @@ the descent path still correctly handles globally non-reduced elements.
 """
 
 import random
+import sys
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
+# descents.py lives in 2026/shared/ and is shared by every arm, so make this script
+# work no matter which run folder it is invoked from.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
 from descents import reflection_matrices, right_descent_path
 
 # ---------------------------------------------------------------------------

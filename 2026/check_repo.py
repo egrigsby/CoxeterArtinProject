@@ -213,14 +213,29 @@ def check_configs():
         if multilabel and tok is not None and dim is not None and tok != dim + 1:
             r.fail(f"{rel}: TOKEN_TYPES ({tok}) != DIM_OUTPUT + 1 ({dim + 1})")
 
-        # A builder in this folder or its parent should agree on the padded length.
-        for folder in (cfg.parent, cfg.parent.parent):
-            for builder in sorted(folder.glob("build*.py")):
-                fixed = _const(builder, "FIXED_LENGTH")
-                if fixed is not None and fixed != seq:
-                    r.fail(f"{rel}: SEQUENCE_LENGTH={seq} but "
-                           f"{builder.relative_to(REPO)} FIXED_LENGTH={fixed}")
-            break   # only the immediate folder; parent builders are shared across runs
+        # A builder sitting in the same folder is that run's own, so its FIXED_LENGTH
+        # must match exactly.
+        for builder in sorted(cfg.parent.glob("build*.py")):
+            fixed = _const(builder, "FIXED_LENGTH")
+            if fixed is not None and fixed != seq:
+                r.fail(f"{rel}: SEQUENCE_LENGTH={seq} but "
+                       f"{builder.relative_to(REPO)} FIXED_LENGTH={fixed}")
+
+    # A builder in a PARENT folder is shared across sweep points (arms/reduced/ is the
+    # case that matters), so it can only be set for one of them at a time. Requiring it
+    # to match every sibling would be wrong; requiring it to match at least one catches
+    # the real failure -- a builder left pointing at a length no run actually uses.
+    for builder in sorted(Y2026.rglob("build*.py")):
+        fixed = _const(builder, "FIXED_LENGTH")
+        if fixed is None:
+            continue
+        siblings = [c for c in builder.parent.rglob("config*.py") if c.parent != builder.parent]
+        if not siblings:
+            continue
+        lengths = {_const(c, "SEQUENCE_LENGTH") for c in siblings}
+        if fixed not in lengths:
+            r.fail(f"{builder.relative_to(REPO)}: FIXED_LENGTH={fixed} matches no run "
+                   f"under {builder.parent.relative_to(REPO)}/ (they use {sorted(l for l in lengths if l)})")
     return r.report("configs agree with builders")
 
 

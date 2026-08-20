@@ -5,3 +5,9 @@ __pycache__
 logs
 workspace
 _scratch
+.DS_Store
+
+# Datasets a run regenerates from its own builder. Rebuild rather than commit;
+# see 2026/REPLICATION.md. (The pre-split train.csv/test.csv that some runs ship
+# ARE tracked, because they fix a partition results depend on.)
+data.csv
