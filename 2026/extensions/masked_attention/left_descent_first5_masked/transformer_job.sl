@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=LeftNFTransformer
+#SBATCH --job-name=LeftDescentFirst5Masked
 #SBATCH --output=logs/%x_%j.out             # Output file
 #SBATCH --error=logs/%x_%j.err              # Error file
 #SBATCH --time=01:00:00                     # Time limit (hrs:min:sec)
@@ -29,7 +29,9 @@ module load miniconda
 module list
 conda activate /projects/expmmllab/CoxeterEnv
 
-# Build the per-prefix descent dataset for the configured group, then train.
-# Comment out the build line if data.csv is already prepared.
-# python build_left_descent_nf_dataset.py
+# This run uses the same normal-form dataset as arms/normal_form/left_descent;
+# its builder and resplit script live there. Uncomment if train.csv / test.csv
+# are not already prepared.
+# python ../../../arms/normal_form/left_descent/build_left_descent_nf_dataset.py
+# python ../../../arms/normal_form/left_descent/resplit_train_test.py
 python Transformer.py

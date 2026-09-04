@@ -1,3 +1,8 @@
+"""
+Affine A2~ - per-prefix RIGHT descent sets, normal-form words. ABLATION: attention keeps
+only ODD positions (every even-index letter is masked out).
+"""
+
 import os
 from pathlib import Path
 
@@ -30,9 +35,8 @@ DATA_SEED      = 598
 # Pre-split input CSV files — must be in the same directory as this config.
 # Each has two columns: `word` (list-string of generator IDs, padded with 0) and
 # `descents` (per-prefix RIGHT-descent bitmask, padded with -1). Words and the
-# 30/70 partition (train on 599 words, test on 1399) are inherited unchanged
-# from "../Run 1" (exhaustive ShortLex normal-form words of length 1..36, A2~);
-# only the labels differ — rebuilt by build_right_descent_dataset.py here.
+# 30/70 partition come from the A2~ normal-form dataset built by
+# ../build_right_descent_dataset.py.
 TRAIN_CSV      = "train.csv"
 TEST_CSV       = "test.csv"
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=HyperbolicRightDescent
+#SBATCH --job-name=HyperbolicShortlexLeft
 #SBATCH --output=logs/%x_%j.out             # Output file
 #SBATCH --error=logs/%x_%j.err              # Error file
 #SBATCH --time=01:00:00                     # Time limit (hrs:min:sec)
@@ -21,18 +21,21 @@
 ### End of SLURM params ###
 ###########################
 
-# Load required modules
+# Load the miniconda module and activate the CoxeterEnv python environment
 module purge
 module use /m31/modulefiles/static
 module load miniconda
 module list
+conda activate /projects/expmmllab/CoxeterEnv
 
-# Source Conda profile and activate the PyTorch environment
-source $(conda info --base)/etc/profile.d/conda.sh
-conda activate m31_pytorch
+# The model lives in 2026/shared/ and is shared by every run. Putting THIS
+# directory on PYTHONPATH is what makes `from config import *` inside the model
+# resolve to the config.py sitting here, so the checkpoint and curves are
+# written into this folder. shared/ deliberately contains no config.py.
+cd "$SLURM_SUBMIT_DIR"
+export PYTHONPATH="$PWD:$PYTHONPATH"
 
-# 1. Resplit the raw inverse shortlex dataset into train.csv and test.csv
+# Split this folder's raw labelled CSV into train.csv / test.csv, then train.
+# Comment out the resplit line if train.csv and test.csv are already prepared.
 python resplit_train_test.py
-
-# 2. Train the Transformer model
-python -u Transformer.py
+python ../../../shared/Transformer_presplit.py

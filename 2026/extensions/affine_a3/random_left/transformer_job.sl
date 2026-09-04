@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=RightNFTransformer
+#SBATCH --job-name=AffineA3RandomLeft
 #SBATCH --output=logs/%x_%j.out             # Output file
 #SBATCH --error=logs/%x_%j.err              # Error file
 #SBATCH --time=01:00:00                     # Time limit (hrs:min:sec)
@@ -29,7 +29,14 @@ module load miniconda
 module list
 conda activate /projects/expmmllab/CoxeterEnv
 
-# Build the per-prefix descent dataset for the configured group, then train.
-# Comment out the build line if data.csv is already prepared.
-# python build_left_descent_nf_dataset.py
-python Transformer.py
+# The model lives in 2026/shared/ and is shared by every run. Putting THIS
+# directory on PYTHONPATH is what makes `from config import *` inside the model
+# resolve to the config.py sitting here, so the checkpoint and curves are
+# written into this folder. shared/ deliberately contains no config.py.
+cd "$SLURM_SUBMIT_DIR"
+export PYTHONPATH="$PWD:$PYTHONPATH"
+
+# Split this folder's raw labelled CSV into train.csv / test.csv, then train.
+# Comment out the resplit line if train.csv and test.csv are already prepared.
+python resplit_train_test.py
+python ../../../shared/Transformer_presplit.py

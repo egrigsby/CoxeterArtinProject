@@ -1,3 +1,8 @@
+"""
+Affine A2~ - per-prefix LEFT descent sets, normal-form words. ABLATION: only positions >= 5
+are visible to attention.
+"""
+
 import os
 from pathlib import Path
 
@@ -31,8 +36,8 @@ DATA_SEED      = 598
 # Each has two columns: `word` (list-string of generator IDs, padded with 0) and
 # `descents` (per-prefix LEFT-descent bitmask, padded with -1). Words are the
 # exhaustive set of ShortLex normal-form words of length 1..36 (A2~), built by
-# ../build_left_descent_nf_dataset.py and re-split 30/70 (train on 599 words,
-# test on 1399) by resplit_train_test.py in this folder.
+# the A2~ normal-form dataset in arms/normal_form/left_descent/, re-split 30/70
+# (train on 599 words, test on 1399) by the resplit script that lives there.
 TRAIN_CSV      = "train.csv"
 TEST_CSV       = "test.csv"
 

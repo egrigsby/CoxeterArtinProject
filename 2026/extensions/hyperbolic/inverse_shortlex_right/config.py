@@ -1,3 +1,7 @@
+"""
+Hyperbolic (4,3,3) - per-prefix RIGHT descent sets, inverse-ShortLex normal-form words.
+"""
+
 import os
 from pathlib import Path
 
@@ -30,9 +34,8 @@ DATA_SEED      = 598
 # Pre-split input CSV files — must be in the same directory as this config.
 # Each has two columns: `word` (list-string of generator IDs, padded with 0) and
 # `descents` (per-prefix RIGHT-descent bitmask, padded with -1). Words and the
-# 30/70 partition (train on 599 words, test on 1399) are inherited unchanged
-# from "../Run 1" (exhaustive ShortLex normal-form words of length 1..36, A2~);
-# only the labels differ — rebuilt by build_right_descent_dataset.py here.
+# 30/70 partition come from inverse_shortlex_right_descents.csv in this folder,
+# split by resplit_train_test.py.
 TRAIN_CSV      = "train.csv"
 TEST_CSV       = "test.csv"
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=RightNFTransformer
+#SBATCH --job-name=RightDescentEvenMasked
 #SBATCH --output=logs/%x_%j.out             # Output file
 #SBATCH --error=logs/%x_%j.err              # Error file
 #SBATCH --time=01:00:00                     # Time limit (hrs:min:sec)
@@ -29,7 +29,7 @@ module load miniconda
 module list
 conda activate /projects/expmmllab/CoxeterEnv
 
-# Build the per-prefix descent dataset for the configured group, then train.
-# Comment out the build line if data.csv is already prepared.
-# python build_left_descent_nf_dataset.py
+# Build the per-prefix descent dataset, then train. Comment out the build line
+# if train.csv and test.csv are already prepared.
+# python ../build_right_descent_dataset.py
 python Transformer.py

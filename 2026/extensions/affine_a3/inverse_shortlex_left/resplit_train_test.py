@@ -11,7 +11,7 @@ import pandas as pd
 
 SEED       = 0
 TRAIN_FRAC = 0.7
-INPUT_CSV  = "inverse_shortlex_left_descents.csv"   # change to your file (or run twice, once per file)
+INPUT_CSV  = "affine_a3_inverse_shortlex_left_descents.csv"   # the raw labelled dataset shipped in this folder
 TRAIN_CSV  = "train.csv"
 TEST_CSV   = "test.csv"
 
